@@ -1,0 +1,52 @@
+{
+  "name": "doc-classifier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.12.0 <25"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"core/**/*.test.ts\" \"scripts/*.test.mjs\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
+    "check": "node scripts/check.mjs",
+    "build": "node scripts/check.mjs",
+    "dev": "vite",
+    "deploy": "node scripts/deploy-cloud.mjs",
+    "dev:api": "wrangler dev",
+    "test:worker": "node scripts/worker-smoke.mjs",
+    "test:ui": "node scripts/ui-smoke.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.2",
+    "typescript": "7.0.2",
+    "vite": "8.3.0",
+    "wrangler": "4.136.2"
+  },
+  "dependencies": {
+    "@zip.js/zip.js": "2.17.0",
+    "fast-xml-parser": "5.11.1",
+    "jose": "6.2.12",
+    "pdfjs-dist": "6.3.289"
+  },
+  "cloudflare": {
+    "bindings": {
+      "OPENAI_API_KEY": {
+        "description": "Your OpenAI API key. Enter only in the secure Cloudflare setup field, never Git."
+      },
+      "JEV_API_KEY": {
+        "description": "Your TypeSafe API key. Enter only in the secure Cloudflare setup field, never Git."
+      },
+      "ACCESS_TEAM_DOMAIN": {
+        "description": "Your Zero Trust team hostname ending .cloudflareaccess.com."
+      },
+      "ACCESS_AUD": {
+        "description": "The audience (AUD) of the Access application protecting this Worker."
+      },
+      "MODEL_CALLS_ENABLED": {
+        "description": "Keep false during setup. Enable only after Health blockers are resolved and spending is approved."
+      }
+    }
+  }
+}

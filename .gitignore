@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.wrangler/
+.idea/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.log
+coverage/
+.local/
+
+# Original deployment configuration stays private and local.
+wrangler.owner.jsonc

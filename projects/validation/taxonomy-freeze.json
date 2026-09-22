@@ -1,0 +1,36 @@
+{
+  "frozenAt": "2026-09-22T14:21:18.856Z",
+  "modelResultsSeen": false,
+  "typeVersion": "0be98c1455bdc5db9c06412ac79851fab1862661aafd02a19fe38ec193322aba",
+  "hashEncoding": "SHA256 UTF8 JSON.stringify(project.typeFile)",
+  "authority": "project.json typeFile is the sole taxonomy source",
+  "referenceStatus": "Agent-curated provisional references; not human-corrected ground truth",
+  "initialThreshold": 0.9,
+  "unresolvedConfig": [
+    {
+      "code": "E_TOKENIZER_UNVERIFIED",
+      "path": "tokenizers.confidence",
+      "detail": "Verified tokenizer identity and documentation are required."
+    },
+    {
+      "code": "E_TOKENIZER_UNVERIFIED",
+      "path": "tokenizers.reader",
+      "detail": "Verified tokenizer identity and documentation are required."
+    },
+    {
+      "code": "E_PROJECT_CONFIG",
+      "path": "limits.readerRequestsPerMinute",
+      "detail": "A verified positive integer limit is required."
+    },
+    {
+      "code": "E_PROJECT_CONFIG",
+      "path": "limits.readerTokensPerMinute",
+      "detail": "A verified positive integer limit is required."
+    },
+    {
+      "code": "E_PROJECT_CONFIG",
+      "path": "limits.readerBatchEnqueuedTokens",
+      "detail": "A verified positive integer limit is required."
+    }
+  ]
+}

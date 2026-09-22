@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "id": "validation",
+  "productName": "Public document validation",
+  "typeFile": {
+    "types": [
+      {
+        "id": "data_collection_form",
+        "name": "Data collection form",
+        "what": "The primary purpose is for a respondent to enter data into fields, boxes or blanks, often with a signature. Attached explanatory material does not change that primary purpose.",
+        "not_for": "Advice for readers without a requested response, or a publication reporting already observed measurements.",
+        "examples": [
+          "A blank application requesting identifying details and a signature."
+        ]
+      },
+      {
+        "id": "public_guidance",
+        "name": "Public guidance",
+        "what": "The primary purpose is to explain practical actions, precautions or requirements for a recurring situation so a reader can understand what to do.",
+        "not_for": "A document primarily collecting respondent data, or primarily publishing measured population estimates.",
+        "examples": [
+          "A leaflet describing safe use of shared equipment."
+        ]
+      },
+      {
+        "id": "statistical_bulletin",
+        "name": "Statistical bulletin",
+        "what": "The primary content reports measured numerical estimates or counts for a population, place or period, using tables or charts with explicit units and dates.",
+        "not_for": "A blank document collecting responses, or practical advice containing incidental numbers.",
+        "examples": [
+          "A dated sheet comparing population rates across periods and places."
+        ]
+      }
+    ],
+    "none_of_these": {
+      "name": "None of these",
+      "what": "The document does not fit any defined type."
+    }
+  },
+  "structuralVocabulary": [
+    "instructions",
+    "background",
+    "definitions",
+    "notes",
+    "references",
+    "methodology",
+    "appendix"
+  ],
+  "settings": {
+    "digestBudget": 6000,
+    "readerEffort": "low",
+    "readerMaxOutputTokens": 16384,
+    "recoveryMaxOutputTokens": 8192,
+    "recoveryMinimumHeadings": 3,
+    "minimumFiledCount": 50,
+    "batchCutoff": 100,
+    "defaultMode": "interactive",
+    "pdfPolicy": {
+      "largeFontRatio": 1.2,
+      "maxHeadingCharacters": 120,
+      "topPageFraction": 0.2,
+      "gapRatio": 1.5
+    }
+  },
+  "pins": {
+    "confidence": {
+      "id": "jev-1.13.0",
+      "date": "2026-09-22",
+      "reason": "Version confirmed against official TypeSafe documentation.",
+      "policy": "versioned"
+    },
+    "reader": {
+      "id": "gpt-5.6-terra",
+      "date": "2026-09-22",
+      "reason": "Owner explicitly authorized family-name calls without pins.",
+      "policy": "owner_approved_alias"
+    },
+    "recovery": {
+      "id": "gpt-5.6-luna",
+      "date": "2026-09-22",
+      "reason": "Owner explicitly authorized family-name calls without pins.",
+      "policy": "owner_approved_alias"
+    }
+  },
+  "budget": {
+    "limitNano": null,
+    "approvedBy": null,
+    "approvedAt": null,
+    "reason": null
+  },
+  "tokenizers": {
+    "confidence": null,
+    "reader": null
+  },
+  "limits": {
+    "readerRequestsPerMinute": null,
+    "readerTokensPerMinute": null,
+    "readerContextTokens": 1050000,
+    "confidenceRequestsPerMinute": 1200,
+    "confidenceStateQuestionTokens": 32000,
+    "confidenceAllQuestionTokens": 64000,
+    "readerBatchEnqueuedTokens": null
+  },
+  "prices": {
+    "interactive": {
+      "recovery": {
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "outputMultiplier": {
+            "denominator": "2",
+            "numerator": "3"
+          },
+          "inputMultiplier": {
+            "denominator": "1",
+            "numerator": "2"
+          }
+        },
+        "inputNanodollarsPerMillion": "200000000",
+        "outputNanodollarsPerMillion": "1200000000"
+      },
+      "confidence": {
+        "outputNanodollarsPerMillion": "0",
+        "inputNanodollarsPerMillion": "42000000"
+      },
+      "reader": {
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "outputMultiplier": {
+            "denominator": "2",
+            "numerator": "3"
+          },
+          "inputMultiplier": {
+            "denominator": "1",
+            "numerator": "2"
+          }
+        },
+        "inputNanodollarsPerMillion": "2000000000",
+        "outputNanodollarsPerMillion": "12000000000"
+      }
+    },
+    "batch": {
+      "recovery": {
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "outputMultiplier": {
+            "denominator": "2",
+            "numerator": "3"
+          },
+          "inputMultiplier": {
+            "denominator": "1",
+            "numerator": "2"
+          }
+        },
+        "inputNanodollarsPerMillion": "200000000",
+        "outputNanodollarsPerMillion": "1200000000"
+      },
+      "confidence": {
+        "outputNanodollarsPerMillion": "0",
+        "inputNanodollarsPerMillion": "42000000"
+      },
+      "reader": {
+        "longContext": {
+          "aboveInputTokens": 272000,
+          "outputMultiplier": {
+            "denominator": "2",
+            "numerator": "3"
+          },
+          "inputMultiplier": {
+            "denominator": "1",
+            "numerator": "2"
+          }
+        },
+        "inputNanodollarsPerMillion": "1000000000",
+        "outputNanodollarsPerMillion": "6000000000"
+      }
+    },
+    "source": [
+      "https://developers.openai.com/api/docs/pricing",
+      "https://docs.typesafe.ai/models"
+    ],
+    "verifiedAt": "2026-09-22"
+  }
+}

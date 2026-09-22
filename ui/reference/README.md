@@ -1,0 +1,1 @@
+The original owner-provided visual reference is not part of this public distribution. The implemented visual language is available in ui/app/style.css and ui/app/app.ts. DESIGN.md remains authoritative for architecture and behavior.
