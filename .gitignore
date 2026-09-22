@@ -12,3 +12,5 @@ coverage/
 
 # Original deployment configuration stays private and local.
 wrangler.owner.jsonc
+
+/node-compile-cache/

@@ -1,4 +1,8 @@
 ﻿export const uiCopy = {
+  documentFilename:'Document', resultExplanation:'Outcome details',
+  workspaceLabel:'DOCUMENT WORKSPACE', navigationLabel:'Workspace navigation', privacyFootnote:'Your originals stay on your machine.', workspaceEyebrow:'A clear path from documents to decisions', sourceEmptyTitle:'Start with your documents', sourceEmptyBody:'Choose a folder to extract its text and structure locally. You review the run before anything is uploaded.', setupStatus:'Setup needs attention', operationalStatus:'Ready for a new run', systemStatus:'System status',
+  flowSteps:[{title:'Extract locally',detail:'Keep the originals on your machine.'},{title:'Review both opinions',detail:'See the evidence behind each outcome.'},{title:'Build and refine',detail:'Create folders and bring back corrections.'}],
+
   conditionalNotFor: (fromName:string,toName:string,toWhat:string) => 'Do not use "'+fromName+'" when "'+toName+'" is the closer fit under this definition: "'+toWhat+'".',
   proposalRetainedReader: 'Retained reader evidence', proposalReaderVerdict: 'Reader verdict', proposalQuoteProvenance: 'Quote provenance', proposalFrozenDefinitions: 'Frozen type definitions', proposalTypeVersion: 'Type version',
   proposalPartialContext: 'Full document context is unavailable here. Retained reader quotes are only partial evidence; review the original document before accepting an example.',
@@ -34,7 +38,7 @@
   product: 'Document classification', browser: 'Use Chrome or Edge', browserReason: 'Your documents stay on your machine. Chrome and Edge provide the folder access needed to build and review your local tree.',
   nav: { home: 'Home', runs: 'Runs', build: 'Build folders', correct: 'Corrections', health: 'Health', help: 'How it works' },
   theme: 'Change colour theme', skip: 'Skip to content', loading: 'Loading…', refresh: 'Refresh', details: 'Technical details', retry: 'Try again',
-  hero: 'A considered place for every document.', lede: 'Two independent systems read each document. Decision rules act only when both agree with enough certainty. Everything else comes back to you.',
+  hero: 'A considered place for every document.', lede: 'Two independent systems review each document. A document is filed only when both agree with enough certainty and no blocking issues. Everything else comes back to you.',
   local: 'Originals stay here', localDetail: 'Only extracted text and structure are uploaded after you confirm a run.',
   outcomes: ['Filed · both systems agree above the threshold', 'Review · a person decides', 'Could not process · the reason is recorded'],
   setup: 'Finish project setup in Git', setupDetail: 'The project type definitions, model pins and verified prices must be committed and deployed before a run can start. This page does not edit project configuration.',

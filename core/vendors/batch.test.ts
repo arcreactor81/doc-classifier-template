@@ -1,6 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { uploadBatchInput, createBatch, pollBatch, ingestBatchResults, validateBatchInput, type BatchDependencies, type BatchContext, type BatchSnapshot } from './batch.ts';
+import { BatchReadRateLimitFailure, uploadBatchInput, createBatch, pollBatch, ingestBatchResults, validateBatchInput, type BatchDependencies, type BatchContext, type BatchSnapshot } from './batch.ts';
 import { buildReaderRequest } from './requests.ts';
 const context: BatchContext = { runId: 'run1', batchKey: 'group1', modelPolicy: { id: 'gpt-5.6-terra', policy: 'owner_approved_alias', date: '2026-09-22', reason: 'Owner approval' } };
 const io = { maxMetadataBytes: 1000000, maxResultLineBytes: 1000000, streamChunkBytes: 7 };
@@ -38,6 +38,27 @@ test('create records durable batch identity and uses responses endpoint plus 24h
   assert.deepEqual(JSON.parse(h.requests[0].body), { input_file_id: 'file_input', endpoint: '/v1/responses', completion_window: '24h', metadata: { run_id: 'run1', batch_key: 'group1' } });
   assert.equal((await pollBatch(created.id, context, h.deps, io)).status, 'completed');
   assert.equal(h.states.length, 2);
+});
+
+test('poll GET temporary 429 persists and logs before exposing a retry signal', async () => {
+  for (const code of ['rate_limit_exceeded', 'slow_down']) {
+    const h = harness([new Response(JSON.stringify({ error: { code, type: 'requests' } }), { status: 429, headers: { 'retry-after': '2' } })]);
+    await assert.rejects(pollBatch('batch_1', context, h.deps, io), (error: unknown) => error instanceof BatchReadRateLimitFailure && error.retryAfter === '2' && error.rawReference === 'attempt1');
+    assert.ok(h.order.indexOf('persist') > h.order.indexOf('fetch')); assert.ok(h.order.indexOf('log') > h.order.indexOf('persist')); assert.equal(h.requests.length, 1);
+  }
+});
+
+test('unknown, permanent, and POST 429 responses stay terminal after persistence', async () => {
+  const cases = [
+    { run: (h: ReturnType<typeof harness>) => pollBatch('batch_1', context, h.deps, io), response: new Response(JSON.stringify({ error: { type: 'requests' } }), { status: 429 }), code: 'E_BATCH_HTTP' },
+    { run: (h: ReturnType<typeof harness>) => pollBatch('batch_1', context, h.deps, io), response: new Response(JSON.stringify({ error: { code: 'credit_balance_exhausted', type: 'insufficient_quota' } }), { status: 429 }), code: 'E_OPENAI_QUOTA' },
+    { run: (h: ReturnType<typeof harness>) => createBatch('file_input', context, h.deps, io), response: new Response(JSON.stringify({ error: { code: 'rate_limit_exceeded', type: 'requests' } }), { status: 429 }), code: 'E_BATCH_HTTP' },
+  ];
+  for (const item of cases) {
+    const h = harness([item.response]);
+    await assert.rejects(item.run(h), (error: unknown) => (error as { code: string }).code === item.code);
+    assert.ok(h.order.indexOf('persist') > h.order.indexOf('fetch')); assert.ok(h.order.indexOf('log') > h.order.indexOf('persist')); assert.equal(h.requests.length, 1);
+  }
 });
 
 test('POST network uncertainty never retries and guard prevents every external operation', async () => {

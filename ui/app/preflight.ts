@@ -108,5 +108,5 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
   window.addEventListener('local-extraction-count',counted);
   const actions = element('div'); actions.className = 'actions'; actions.append(estimate, confirm, resume);
   host.append(output, budgetBox, notice, actions); update();
-  const initialEpoch=selectionEpoch;void options.request('/api/project').then(raw=>{const pack=requireProject(raw);modeSettings=pack.settings;if(initialEpoch===selectionEpoch)mode.value=suggestRunMode(modeSettings,selectedCount,userMode);else if(!userMode)mode.value=suggestRunMode(modeSettings,selectedCount);}).catch(options.onError);
+  const initialEpoch=selectionEpoch;void options.request('/api/project').then(raw=>{const settings=(raw as {settings?:ModeSettings}|null)?.settings;if(!settings)throw new Error(c.setupDetail);suggestRunMode(settings,null);modeSettings=settings;if(initialEpoch===selectionEpoch)mode.value=suggestRunMode(modeSettings,selectedCount,userMode);else if(!userMode)mode.value=suggestRunMode(modeSettings,selectedCount);}).catch(options.onError);
 }

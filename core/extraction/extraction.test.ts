@@ -82,3 +82,13 @@ test('PPTX title associations stop at slide boundaries while tables and notes re
  assert.deepEqual(result.outline.tables[0].headers,[word(3)]);
  for(const item of [...result.outline.headings,...result.outline.blocks])assert.equal(result.fullText.slice(item.position,item.position+item.text.length),item.text);
 });
+
+test('DOCX extracts displayed carriers not drawing geometry or field instructions, retaining textbox text and whitespace',()=>{
+ const xml='<w:document xmlns:w="urn:w" xmlns:wp="urn:wp" xmlns:a="urn:a"><w:body><w:p><w:r><w:t>Visible</w:t><w:tab/><w:t>body</w:t><w:br/><w:instrText>INSTRUCTION_ONLY</w:instrText><w:fldChar w:fldCharType="separate"/><w:t>Displayed field</w:t><w:drawing><wp:anchor><wp:positionH><wp:posOffset>731942</wp:posOffset></wp:positionH><wp:extent cx="999" cy="888"/><a:graphic><a:t>Drawing text</a:t></a:graphic></wp:anchor></w:drawing><w:txbxContent><w:p><w:r><w:t>Textbox text</w:t></w:r></w:p></w:txbxContent></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Header</w:t><w:drawing><wp:posOffset>829413</wp:posOffset></w:drawing></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>';
+ const parts=new Map([['word/document.xml',xml],['docProps/core.xml','<cp:coreProperties xmlns:cp="urn:cp" xmlns:dc="urn:dc"><dc:title>Metadata title</dc:title></cp:coreProperties>']]);
+ const result=parseDocxParts(parts);assert.equal(result.fullText,'[Page 1]\nVisible\tbody\nDisplayed fieldDrawing textTextbox text\nHeader');assert.equal(result.outline.title,'Metadata title');assert.deepEqual(result.outline.tables[0].headers,['Header']);
+});
+test('Office visible text carriers support namespace aliases without admitting unrelated text nodes',()=>{
+ const xml='<w:document xmlns:w="urn:w" xmlns:alias="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="urn:metadata"><w:body><w:p><w:r><alias:t>Visible alias</alias:t><m:t>Not a text carrier</m:t><m:value>Metadata only</m:value></w:r></w:p></w:body></w:document>';
+ assert.equal(parseDocxParts(new Map([['word/document.xml',xml]])).fullText,'[Page 1]\nVisible alias');
+});

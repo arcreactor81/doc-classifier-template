@@ -2,11 +2,14 @@ import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import type { DigestInput, DigestHeading, DigestTable, DigestBlock } from '../digest/digest.ts';
 
 type XmlNode = Record<string, unknown>;
+const namespaces=new WeakMap<XmlNode,string>();
 export interface ParsedDocument { fullText: string; outline: DigestInput }
 function parse(xml: string): XmlNode[] {
   const valid = XMLValidator.validate(xml);
   if (valid !== true) throw new Error(`Invalid document XML: ${valid.err.code}`);
-  return new XMLParser({ preserveOrder: true, ignoreAttributes: false, removeNSPrefix: false, trimValues: false, parseTagValue: false, processEntities: true }).parse(xml) as XmlNode[];
+  const nodes=new XMLParser({ preserveOrder: true, ignoreAttributes: false, removeNSPrefix: false, trimValues: false, parseTagValue: false, processEntities: true }).parse(xml) as XmlNode[];
+  function visit(items:XmlNode[],inherited:Record<string,string>):void{for(const node of items){const scope={...inherited};for(const [key,value]of Object.entries((node[':@']??{}) as Record<string,string>)){if(key==='@_xmlns')scope['']=value;else if(key.startsWith('@_xmlns:'))scope[key.slice(8)]=value;}const qualified=rawTag(node),prefix=qualified.includes(':')?qualified.split(':')[0]:'';namespaces.set(node,scope[prefix]??'');visit(children(node),scope);}}
+  visit(nodes,{});return nodes;
 }
 const rawTag = (node: XmlNode) => Object.keys(node).find(key => key !== ':@') ?? '';
 const tag = (node: XmlNode) => rawTag(node).split(':').at(-1)!;
@@ -28,9 +31,13 @@ function required(parts: ReadonlyMap<string, string>, path: string): XmlNode[] {
   if (xml === undefined) throw new Error(`Required document part is missing: ${path}`);
   return parse(xml);
 }
+const textNamespaces=new Set(['http://schemas.openxmlformats.org/wordprocessingml/2006/main','http://schemas.openxmlformats.org/drawingml/2006/main','http://purl.oclc.org/ooxml/wordprocessingml/main','http://purl.oclc.org/ooxml/drawingml/main']);
+const textCarrier=(node:XmlNode)=>tag(node)==='t'&&(['w:t','a:t'].includes(rawTag(node))||textNamespaces.has(namespaces.get(node)??''));
+const literal=(node:XmlNode)=>children(node).filter(child=>rawTag(child)==='#text').map(child=>String(child['#text'])).join('');
 function plain(nodes: readonly XmlNode[]): string {
   return nodes.map(node => {
-    if (tag(node) === '#text') return String(node['#text']);
+    if (textCarrier(node)) return literal(node);
+    if (tag(node) === '#text') return '';
     if (tag(node) === 'tab') return '\t';
     if (tag(node) === 'br') return '\n';
     return plain(children(node));
@@ -70,7 +77,7 @@ class Accumulator {
 }
 function metadataTitle(parts: ReadonlyMap<string, string>): string | undefined {
   const core = parts.get('docProps/core.xml');
-  return core === undefined ? undefined : all(parse(core), 'title').map(node => plain(children(node))).find(value => value.trim());
+  return core === undefined ? undefined : all(parse(core), 'title').map(literal).find(value => value.trim());
 }
 
 export function parseDocxParts(parts: ReadonlyMap<string, string>): ParsedDocument {
@@ -111,7 +118,8 @@ export function parseDocxParts(parts: ReadonlyMap<string, string>): ParsedDocume
             if (name === 'pPr' || name === 'rPr') continue;
             if (name === 'lastRenderedPageBreak' || (name === 'br' && attr(item, 'type') === 'page')) {
               acc.add(buffer, level); buffer = ''; acc.marker(`[Page ${++page}]`);
-            } else if (name === '#text') buffer += String(item['#text']);
+            } else if (textCarrier(item)) buffer += literal(item);
+            else if (name === '#text') continue;
             else if (name === 'tab') buffer += '\t';
             else if (name === 'br') buffer += '\n';
             else run(children(item));

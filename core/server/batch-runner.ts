@@ -1,4 +1,4 @@
-import { uploadBatchInput,createBatch,pollBatch,ingestBatchResults,type BatchDependencies,type BatchSnapshot,type BatchInputEntry } from '../vendors/batch.ts';
+import { BatchReadRateLimitFailure, uploadBatchInput,createBatch,pollBatch,ingestBatchResults,type BatchDependencies,type BatchSnapshot,type BatchInputEntry } from '../vendors/batch.ts';
 import { decodeReader,verifyModelPolicy,type FrozenVendorRequest,type BatchResult } from '../vendors/requests.ts';
 import type { ProjectPack } from '../config/project.ts';
 import { actualUsageCost } from '../cost/cost.ts';
@@ -9,6 +9,22 @@ import { Store,now,type RunRow } from './store.ts';
 import { ServerFailure,failure } from './errors.ts';
 import type { Upload } from './contracts.ts';
 const io={maxMetadataBytes:1024*1024,maxResultLineBytes:8*1024*1024,streamChunkBytes:64*1024};
+const BATCH_READ_RETRY_ATTEMPTS=3;
+type BatchPollOutcome={kind:'response';snapshot:BatchSnapshot}|{kind:'rate_limited';retryAfter:string|null;rawReference:string};
+export function batchReadRetryDelay(retryAfter:string|null,nowMs=Date.now()):number{
+ let delay=30000;if(retryAfter){const value=/^\d+(?:\.\d+)?$/.test(retryAfter)?Number(retryAfter)*1000:Date.parse(retryAfter)-nowMs;if(!Number.isFinite(value))throw new ServerFailure('E_RETRY_AFTER','blocker','The Batch retry-after header is invalid.');delay=Math.max(delay,value);}return delay;
+}
+/** Each temporary 429 outcome is persisted by accountingStage before this outer durable sleep. */
+export async function pollWithReadRetries(runner:Pick<Runner,'accountingStage'|'step'|'store'>,stagePrefix:string,batchId:string,read:()=>Promise<BatchSnapshot>):Promise<BatchSnapshot>{
+ for(let attempt=1;attempt<=BATCH_READ_RETRY_ATTEMPTS;attempt++){
+  const key=await runner.accountingStage(stagePrefix+'-read-'+attempt,batchId,async():Promise<BatchPollOutcome>=>{try{return{kind:'response',snapshot:await read()};}catch(error){if(error instanceof BatchReadRateLimitFailure)return{kind:'rate_limited',retryAfter:error.retryAfter,rawReference:error.rawReference};throw error;}});
+  const outcome=await runner.store.json<BatchPollOutcome>(key);
+  if(outcome.kind==='response')return outcome.snapshot;
+  if(attempt===BATCH_READ_RETRY_ATTEMPTS)throw new ServerFailure('E_BATCH_READ_RATE_LIMIT','blocker','Batch polling remained rate limited after all permitted read attempts.');
+  await runner.step.sleep(stagePrefix+'-rate-limit-delay-'+attempt,batchReadRetryDelay(outcome.retryAfter));
+ }
+ throw new ServerFailure('E_BATCH_READ_RATE_LIMIT','blocker','Batch polling retry state ended without an outcome.');
+}
 export async function batchReader(runner:Runner,pack:ProjectPack,request:FrozenVendorRequest):Promise<string>{
  const {store,env,run,fingerprint}=runner;
  const requestKey=await runner.stage('batch-request',async()=>request,true);
@@ -62,10 +78,8 @@ async function coordinateGroup(runner:Runner,pack:ProjectPack,group:BatchArtifac
    return deps.fetch(url,init);
   }};
   for(let poll=0;!['completed','failed','expired','cancelled'].includes(snapshot.status);poll++){
-   const retryAfter=snapshot.retryAfter;
-   let delay=30000;if(retryAfter){const value=/^\d+(?:\.\d+)?$/.test(retryAfter)?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now();if(!Number.isFinite(value))throw new ServerFailure('E_RETRY_AFTER','blocker','The Batch retry-after header is invalid.');delay=Math.max(delay,value);}
-   await runner.step.sleep(`batch-${groupIndex}-${schemaAttempt}-poll-delay-${poll}`,delay);
-   const key=await runner.accountingStage(`batch-${groupIndex}-${schemaAttempt}-poll-${poll}`,snapshot.id,()=>pollBatch(snapshot.id,context,accountingDeps,io));snapshot=await store.json<BatchSnapshot>(key);
+   await runner.step.sleep('batch-'+groupIndex+'-'+schemaAttempt+'-poll-delay-'+poll,batchReadRetryDelay(snapshot.retryAfter));
+   snapshot=await pollWithReadRetries(runner,'batch-'+groupIndex+'-'+schemaAttempt+'-poll-'+poll,snapshot.id,()=>pollBatch(snapshot.id,context,accountingDeps,io));
   }
   const correlatedKey=await runner.accountingStage(`batch-${groupIndex}-${schemaAttempt}-correlate`,snapshot.id,async()=>{
    const result=await ingestBatchResults(snapshot,entries.map(entry=>entry.customId),context,accountingDeps,io);

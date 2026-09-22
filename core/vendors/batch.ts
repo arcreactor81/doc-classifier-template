@@ -23,6 +23,11 @@ export interface BatchDependencies extends Pick<TransportDependencies, 'fetch' |
   /** Stage immutable results only: do not decide documents until correlation has completed. */
   stageResult(value: { customId: string; result: BatchResult; source: { retrievalId: string; fileId: string; lineNumber: number } }): Promise<string>;
 }
+export class BatchReadRateLimitFailure extends ValidationFailure {
+  readonly retryAfter: string | null;
+  readonly rawReference: string;
+  constructor(retryAfter: string | null, rawReference: string) { super('E_BATCH_READ_RATE_LIMIT', 'blocker', 'Batch GET was temporarily rate limited after its response was retained.'); this.retryAfter = retryAfter; this.rawReference = rawReference; }
+}
 export interface BatchCorrelation {
   /** This means every expected ID has a result or explicit failure, NOT that every document succeeded. */
   correlationComplete: true;
@@ -31,6 +36,8 @@ export interface BatchCorrelation {
   retrievalIds: string[];
 }
 const encoder = new TextEncoder();
+const permanentOpenAiQuotaCodes = new Set(['insufficient_quota', 'credit_balance_exhausted', 'organization_spend_limit_exceeded', 'project_spend_limit_exceeded', 'organization_usage_limit_exceeded']);
+const temporaryOpenAiRateLimitCodes = new Set(['rate_limit_exceeded', 'slow_down']);
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 function fail(code: string, message: string): never { throw new ValidationFailure(code, 'blocker', message); }
 function id(value: unknown): asserts value is string {
@@ -124,6 +131,11 @@ async function requestJson(url: string, init: RequestInit, context: BatchContext
   await persistRaw(deps, { ...attempt, raw, latencyMs: deps.now() - start });
   await deps.logCall({ attemptId: attempt.attemptId, role: 'reader', modelRequested: context.modelPolicy.id, status: attempt.status,
     requestId: attempt.requestId, networkFailure: false, latencyMs: deps.now() - start, modelReturned: null, usage: null });
+  let error: Record<string, unknown> | null = null;
+  try { const value: unknown = JSON.parse(raw); if (record(value) && record(value.error)) error = value.error; }
+  catch { /* A malformed error response remains a terminal Batch HTTP failure. */ }
+  if (response.status === 429 && typeof error?.code === 'string' && permanentOpenAiQuotaCodes.has(error.code)) fail('E_OPENAI_QUOTA', 'OpenAI quota or billing access requires action before another request.');
+  if ((init.method ?? 'GET') === 'GET' && response.status === 429 && typeof error?.code === 'string' && temporaryOpenAiRateLimitCodes.has(error.code)) throw new BatchReadRateLimitFailure(attempt.retryAfter, attempt.attemptId);
   if (response.status >= 300 && response.status < 400) fail('E_VENDOR_REDIRECT', 'Batch redirects are not followed. The unchanged response was retained.');
   if (response.status === 401 || response.status === 403) fail('E_VENDOR_AUTH', 'Reader credentials were rejected.');
   if (!response.ok) fail('E_BATCH_HTTP', 'Batch API request failed; the recorded response has not been automatically retried.');

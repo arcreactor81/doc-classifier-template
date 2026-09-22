@@ -38,6 +38,7 @@ export interface TransportDependencies {
   recordDocumentOutcome(role: VendorRole, exhausted: boolean): Promise<number>;
 }
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+const permanentOpenAiQuotaCodes = new Set(['insufficient_quota', 'credit_balance_exhausted', 'organization_spend_limit_exceeded', 'project_spend_limit_exceeded', 'organization_usage_limit_exceeded']);
 const tokenCount = (value: unknown): boolean => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 function schemaCode(role: VendorRole): string { return role === 'reader' ? 'E_READER_SCHEMA' : role === 'confidence' ? 'E_JEV_SCHEMA' : 'E_RECOVERY_SCHEMA'; }
 function validatePolicy(policy: RetryPolicy, role: VendorRole): void {
@@ -120,8 +121,12 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
       const { raw: _raw, retryAfter: _retryAfter, ...metadata } = attempt;
       try { await deps.logCall({ ...metadata, modelReturned, usage }); }
       catch { throw new ValidationFailure('E_VENDOR_LOG', 'blocker', 'Vendor call usage and event could not be stored.'); }
-      await deps.guard(role);
+      const error = record(parsed) && record(parsed.error) ? parsed.error : null;
       if (modelReturned !== null) verifyModelPolicy(modelPolicy, modelReturned, role);
+      const permanentOpenAiQuota = role !== 'confidence' && status === 429 && typeof error?.code === 'string' && permanentOpenAiQuotaCodes.has(error.code);
+      // No further inference is possible after this blocker, so preserve the provider diagnosis before the guard that stops new work on unknown usage.
+      if (permanentOpenAiQuota) throw new ValidationFailure('E_OPENAI_QUOTA', 'blocker', 'OpenAI quota or billing access requires action before another request.');
+      await deps.guard(role);
       if (networkFailure || status === 408 || status === 409 || status === 429 || status !== null && status >= 500) {
         if (transportAttempt === policy.transportAttempts) return exhausted(role, deps, policy, new ValidationFailure('E_VENDOR_UNAVAILABLE', 'document', 'Vendor unavailable after all permitted attempts.'));
         await deps.sleep(retryDelay(retryAfter, transportAttempt, policy, deps.now()));
@@ -132,7 +137,6 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
         throw new ValidationFailure('E_VENDOR_REDIRECT', 'document', 'Vendor redirects are not followed. The unchanged response was retained.');
       }
       if (status === 401 || status === 403) throw new ValidationFailure('E_VENDOR_AUTH', 'blocker', 'Vendor credentials were rejected.');
-      const error = record(parsed) && record(parsed.error) ? parsed.error : null;
       if (status === 404 || error?.code === 'model_not_found' || error?.param === 'model') throw new ValidationFailure('E_MODEL_REJECTED', 'blocker', 'Configured model was rejected by the vendor.');
       if (status === null || status < 200 || status >= 300) {
         await deps.recordDocumentOutcome(role, false);

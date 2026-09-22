@@ -2,7 +2,7 @@ import {chromium} from '@playwright/test';
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const pack=JSON.parse(await fs.readFile('projects/generic/project.json','utf8'));
-pack.typeFile.types=[{id:'type_a',name:'A',what:'B',not_for:'C',examples:['D']}];
+pack.typeFile.types=[]; // An intentionally unconfigured taxonomy must still display a valid run-mode suggestion.
 pack.settings.defaultMode='batch';pack.settings.batchCutoff=10;
 const browser=await chromium.launch({channel:'msedge',headless:true});
 try{const page=await browser.newPage();await page.route('**/api/**',r=>r.fulfill({json:{status:'NOT READY',blockers:[],versions:{},project:{},modelCallsEnabled:false,textHeldRuns:0}}));await page.goto('http://127.0.0.1:5173/#help');

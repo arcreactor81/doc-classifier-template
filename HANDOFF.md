@@ -166,3 +166,13 @@ Run tables now show stored outcomes, reasons and priority-one disagreements, rat
 Failure sidecars retain actual failure details. Correction proposals can include exact retained reader quotes with originating type/verdict and artifact/index provenance, including negative verdicts. Frozen type definitions support conditional exclusion candidates; full-context limitations remain explicit and nothing applies automatically. Full document state is not retained for these proposals. Legacy digest/cost module documentation now identifies active versus historical behavior.
 
 Combined implementation gate passed 220 tests, both TypeScript checks and UI build. Focused acceptance includes typed errors/evidence and proposal browser checks plus local workerd correction persistence. These are implementation checks, not a model-quality or fresh-account deployment claim. Structural-note filing policy remains unchanged.
+
+## Responsive interface, Office text and rate-limit refinements (2026-09-22)
+
+The interface now has responsive workspace navigation, a clear local workflow overview, polished setup/budget/evidence/proposal cards, and narrow-screen document result cards. Light/dark themes, fixed outcome colors and reduced-motion behavior are retained. Existing confirmation, original-file privacy and classification rules are unchanged. Setup mode suggestions no longer require a complete taxonomy, while full run readiness still does. No external font or UI framework dependency was added.
+
+Office extractor1.0.3 reads explicit Word/DrawingML text carriers and skips XML indentation, retaining source text spacing/tabs/breaks and namespace-aware text. This prevents serialization whitespace from becoming document content. Targeted DOCX namespace/spacing coverage accompanies the change.
+
+Permanent OpenAI quota/billing429 errors now stop with an actionable blocker after raw accounting, without repeating inference. Temporary Batch metadata-poll429 responses receive bounded durable read-only retries. Batch result-file GET429 retry remains an explicit reliability gap; no uncertain upload/create is replayed.
+
+Combined implementation gate passed228tests, both TypeScript checks and UI build. Frontend acceptance included15layout/theme/reduced-motion checks,14confirmation,22correction/health,19realOPFSbuilder,11error/evidence,16proposal and5mode checks. Six screenshots were visually reviewed. These are fixture/local acceptance checks, not new model-quality results or a fresh-owner install claim.

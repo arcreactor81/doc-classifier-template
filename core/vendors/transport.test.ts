@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { executeVendor, retryDelay, type TransportDependencies, type RetryPolicy, type RawAttempt, type CallLog } from './transport.ts';
 import { ValidationFailure } from './validate.ts';
+import { ServerFailure } from '../server/errors.ts';
 import type { FrozenVendorRequest } from './requests.ts';
 const request: FrozenVendorRequest = Object.freeze({ role: 'reader', endpoint: 'https://api.openai.com/v1/responses', model: 'gpt-5.6-terra', modelPolicy: { id: 'gpt-5.6-terra', policy: 'owner_approved_alias' as const, date: '2026-09-22', reason: 'User authorization' }, body: '{"model":"gpt-5.6-terra","input":"1"}' });
 const policy: RetryPolicy = { transportAttempts: 3, schemaAttempts: 2, baseDelayMs: 100, maxBackoffMs: 1000, consecutiveFailureLimit: 3 };
@@ -36,6 +37,23 @@ test('transport retries same immutable bytes, unique artifacts, honors retry-aft
   assert.deepEqual(h.sent.map(value => value.body), [request.body, request.body, request.body]);
   assert.deepEqual(h.sleeps, [2000, 200]);
   assert.equal(new Set(h.raw.map(value => value.attemptId)).size, 3);
+});
+
+test('OpenAI permanent quota 429 persists and accounts response before blocker without retry', async () => {
+  for (const code of ['insufficient_quota', 'credit_balance_exhausted', 'organization_spend_limit_exceeded', 'project_spend_limit_exceeded', 'organization_usage_limit_exceeded']) {
+    const h = harness([new Response(JSON.stringify({ error: { type: 'insufficient_quota', code } }), { status: 429 }), ok()]);
+    await assert.rejects(executeVendor(request, policy, h.deps, decode), (error: unknown) => (error as ValidationFailure).code === 'E_OPENAI_QUOTA');
+    assert.deepEqual(h.events, ['guard', 'secret', 'fetch', 'persist', 'log']);
+    assert.equal(h.sent.length, 1); assert.equal(h.raw.length, 1); assert.equal(h.logs.length, 1); assert.deepEqual(h.sleeps, []);
+  }
+});
+
+test('permanent quota diagnosis takes precedence over the post-response unknown-spend guard without another request', async () => {
+  const h = harness([new Response(JSON.stringify({ error: { type: 'insufficient_quota', code: 'credit_balance_exhausted' } }), { status: 429 }), ok()]);
+  let guardCalls = 0;
+  h.deps.guard = async () => { h.events.push('guard'); if (++guardCalls === 2) throw new ServerFailure('E_SPEND_UNACCOUNTED', 'blocker', 'A vendor response has unaccounted spending.'); };
+  await assert.rejects(executeVendor(request, policy, h.deps, decode), (error: unknown) => (error as { code: string }).code === 'E_OPENAI_QUOTA');
+  assert.equal(guardCalls, 1); assert.equal(h.sent.length, 1); assert.equal(h.raw.length, 1); assert.equal(h.logs.length, 1); assert.deepEqual(h.sleeps, []);
 });
 
 test('one identical schema retry with up to three transport attempts each gives six overall', async () => {
