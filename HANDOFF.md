@@ -114,3 +114,5 @@ Replaced required upfront cost prediction with per-run combined/OpenAI/TypeSafe 
 Private implementation passed 181 tests, both TypeScript checks, production UI build and browser budget consent checks. Public export receives its own release verification. No live model validation or accuracy result is claimed.
 
 Public release copy review: the original snapshot's open item for exact request tokenization and a pre-upload cost bound is superseded by monitored per-run spending. The remaining tokenizer task is solely the official Jev implementation for the unchanged 6,000-token digest. New runs record their own budget decision; a mandatory project-pack budget is no longer a readiness requirement. Historical design excerpts above are read together with the latest DESIGN amendment.
+
+Generic starter correction: Batch enqueued-token allowance is explicitly null (unknown), matching the validator's optional throughput contract. Missing account throughput does not block classification setup. No model or extraction setting changed.
