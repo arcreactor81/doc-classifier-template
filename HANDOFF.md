@@ -130,3 +130,7 @@ Reviewed [Python Workers GA](https://blog.cloudflare.com/python-workers-ga/) on 
 Release integration review found and fixed the confidence adapter rejecting the new fullText field. A regression now passes the actual structured-state builder output into request construction and checks exact preservation plus rejection of malformed/extra fields. The final export gate is rerun after this fix.
 
 Final sanitized export verification: 189 tests passed, both TypeScript checks passed and the production UI build passed. No deployment or vendor inference occurred during verification.
+
+## Workflow instance identity repair (2026-09-22)
+
+Concatenating a run UUID and full document fingerprint produced a 101-character Workflow instance ID, exceeding Cloudflare's 100-character maximum. Instance IDs now use a stable 68-character value: doc_ plus SHA-256 of the complete framed run/document identities. Neither identity is truncated. Classification requests, decision rules and document content are unchanged. A halted run is not retried automatically. Three focused tests cover the supported alphabet/length, determinism, full identity contribution and invalid inputs.

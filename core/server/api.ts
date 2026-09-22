@@ -1,3 +1,4 @@
+import { workflowInstanceId } from './workflow-identity.ts';
 import { correctionContext } from './correction-context.ts';
 import { requireProject,typeVersion,type ProjectPack } from '../config/project.ts';
 import { authorizeRunBudget,readRunBudget } from '../cost/run-budget.ts';
@@ -83,7 +84,7 @@ async function start(env:Env,store:Store,run:RunRow):Promise<Response>{
   await env.DB.prepare("UPDATE runs SET status='running' WHERE id=? AND status='uploading'").bind(run.id).run();
  }
  let started=0;for(const doc of docs.filter(doc=>doc.status!=='complete'&&doc.workflow_id===null).slice(0,50)){
-  const id=`${run.id}-${doc.fingerprint}`;
+  const id=await workflowInstanceId(run.id,doc.fingerprint);
   try{await env.DOCUMENT_WORKFLOW.create({id,params:{runId:run.id,fingerprint:doc.fingerprint}});await env.DB.prepare('UPDATE documents SET workflow_id=? WHERE run_id=? AND fingerprint=?').bind(id,run.id,doc.fingerprint).run();started++;}
   catch(error){await store.halt(run.id,{code:'E_WORKFLOW_START',detail:failure(error).message});throw new ServerFailure('E_WORKFLOW_START','blocker','A document workflow could not be started. The run has halted.');}
  }
