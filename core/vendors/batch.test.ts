@@ -99,10 +99,10 @@ test('failed result retrieval retains raw error chunks and logs before halting',
   assert.ok(h.order.includes('log'));
 });
 
-test('returned model mismatch halts before staging a result', async () => {
-  const h = harness([new Response(line('1').replace('gpt-5.6-terra', 'gpt-5.6-sol'))]);
-  await assert.rejects(ingestBatchResults(await snapshot(), ['1'], context, h.deps, io), (error: unknown) => (error as { code: string }).code === 'E_TERRA_PIN_DRIFT');
-  assert.equal(h.staged.length, 0); assert.ok(h.chunks.length > 0);
+test('returned model mismatch blocks classification after retaining every received result for accounting', async () => {
+  const h = harness([new Response(line('1').replace('gpt-5.6-terra', 'gpt-5.6-sol')+'\n'+line('2'))]);
+  await assert.rejects(ingestBatchResults(await snapshot(), ['1','2'], context, h.deps, io), (error: unknown) => (error as { code: string }).code === 'E_TERRA_PIN_DRIFT');
+  assert.equal(h.staged.length, 2); assert.ok(h.chunks.length > 0);
 });
 
 test('stream storage failure prevents result parsing; oversized lines fail visibly', async () => {

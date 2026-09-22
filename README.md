@@ -6,7 +6,7 @@ Read [DESIGN.md](DESIGN.md) before changing behavior and [HANDOFF.md](HANDOFF.md
 
 ## Current status
 
-The generic project is intentionally unconfigured. An empty taxonomy, missing owner-approved spending limit, unverified vendor tokenizer contract and disabled model calls must produce NOT READY. Test success does not mean the system is ready for live classification. No paid model inference has been used to validate the implementation.
+The generic project is intentionally unconfigured. An empty taxonomy, unavailable official Jev digest tokenizer and disabled model calls must produce NOT READY. Each run asks for its own spending limits or explicit acknowledgement of unlimited spending. Test success does not mean the system is ready for live classification. No paid model inference has been used to validate the implementation.
 
 ## Development
 
@@ -28,7 +28,7 @@ Browser originals remain on the user's machine. Local extraction state uses Inde
 
 Follow the [browser-only setup](docs/browser-deployment.md) to create your own copy on a Cloudflare workers.dev address. No custom domain or local installation is required. Cloudflare provisions storage and prompts for your keys; protect the Worker through its Access dashboard. Model calls start disabled.
 
-Deployment success is separate from classification readiness. The generic project requires your definitions, approved budget and verified token accounting; /health lists blockers. The fresh-account button walkthrough has not yet been acceptance-tested. [Deployment maintenance](docs/deployment.md) describes build gates and release checks.
+Deployment success is separate from classification readiness. The generic project requires your definitions, verified prices and the official Jev digest tokenizer; /health lists blockers. The fresh-account button walkthrough has not yet been acceptance-tested. [Deployment maintenance](docs/deployment.md) describes build gates and release checks.
 
 ## Structure
 
@@ -45,3 +45,5 @@ Deployment success is separate from classification readiness. The generic projec
 - projects/generic: initial project pack, awaiting owner configuration.
 
 The nontechnical guide is available through Help and /How%20It%20Works.html in the app.
+
+Spending limits are selected for each run in the website: combined, OpenAI, TypeSafe, or a combination. Running without limits requires an explicit warning acknowledgement. In-flight calls and submitted batches can exceed a monitored threshold before usage arrives. See [run spending](docs/run-spending.md).

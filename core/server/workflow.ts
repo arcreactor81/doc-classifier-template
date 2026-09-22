@@ -23,7 +23,7 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
    if(!initial.input_key)throw new ServerFailure('E_INPUT_MISSING','blocker','Uploaded text is missing.');
    await runner.stage('started',async()=>{await this.env.DB.prepare("UPDATE documents SET status='running' WHERE run_id=? AND fingerprint=? AND status='uploaded'").bind(runId,fingerprint).run();return{inputKey:initial.input_key};});
    const upload=await store.json<Upload>(initial.input_key);
-   if(upload.tokenCounts.readerInputTokens+pack.settings.readerMaxOutputTokens>pack.limits.readerContextTokens)throw new ServerFailure('E_READER_CONTEXT','document','The full text exceeds the reader context limit.');
+   if(upload.tokenCounts.readerInputTokens!==null&&upload.tokenCounts.readerInputTokens+pack.settings.readerMaxOutputTokens>pack.limits.readerContextTokens)throw new ServerFailure('E_READER_CONTEXT','document','The full text exceeds the reader context limit.');
    let outline=upload.outline;const notes:string[]=JSON.parse(initial.notes_json);
    if(upload.needsOutlineRecovery){
     const request=buildRecoveryRequest({pin:pack.pins.recovery,text:upload.fullText,effort:pack.settings.readerEffort,maxOutputTokens:pack.settings.recoveryMaxOutputTokens});
@@ -40,11 +40,10 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
     }
    }
    const confidenceCodec=codecFor(pack.tokenizers.confidence.id);
-   const digestKey=await runner.stage('digest',async()=>buildDigest(outline,{budget:pack.settings.digestBudget,vocabulary:pack.structuralVocabulary,codec:confidenceCodec,policy:{version:DIGEST_POLICY_VERSION,acceptedBy:pack.budget.approvedBy,acceptedAt:pack.budget.approvedAt,tokenizerId:confidenceCodec.id}}));
+   const digestKey=await runner.stage('digest',async()=>buildDigest(outline,{budget:pack.settings.digestBudget,vocabulary:pack.structuralVocabulary,codec:confidenceCodec,policy:{version:DIGEST_POLICY_VERSION,acceptedBy:pack.tokenizers.confidence.source,acceptedAt:pack.tokenizers.confidence.verifiedAt,tokenizerId:confidenceCodec.id}}));
    const digest=await store.json<DigestResult>(digestKey);notes.push(...digest.notes);
    await this.env.DB.prepare('UPDATE documents SET digest_key=?,notes_json=? WHERE run_id=? AND fingerprint=?').bind(digestKey,JSON.stringify([...new Set(notes)]),runId,fingerprint).run();
    const confidenceRequest=buildConfidenceRequest({pin:pack.pins.confidence,typeFile:pack.typeFile,serializedDigest:digest.serialized});
-   if(confidenceCodec.countTokens(confidenceRequest.body)>upload.tokenCounts.confidenceInputTokens)throw new ServerFailure('E_COST_INPUT_CHANGED','blocker','The final confidence request exceeds the confirmed token ceiling. Request a new estimate; the request was not sent.');
    const confidenceKey=await runner.vendor(confidenceRequest,pack,raw=>decodeConfidence(raw,pack.pins.confidence,pack.typeFile.types.map(type=>type.id)));
    await this.env.DB.prepare('UPDATE documents SET confidence_key=? WHERE run_id=? AND fingerprint=?').bind(confidenceKey,runId,fingerprint).run();
    const readerRequest=buildReaderRequest({pin:pack.pins.reader,typeFile:pack.typeFile,text:upload.fullText,effort:pack.settings.readerEffort,maxOutputTokens:pack.settings.readerMaxOutputTokens});

@@ -1,8 +1,9 @@
 import type { WorkflowStep } from 'cloudflare:workers';
 import type { ProjectPack } from '../config/project.ts';
-import { checkLiveBudget, actualUsageCost, type BudgetDecision } from '../cost/cost.ts';
+import { actualUsageCost } from '../cost/cost.ts';
+import { checkRunBudget,readRunBudget } from '../cost/run-budget.ts';
 import { executeVendor, type CallLog, type RawAttempt, type TransportDependencies } from '../vendors/transport.ts';
-import type { FrozenVendorRequest, VendorRole } from '../vendors/requests.ts';
+import { verifyModelPolicy,type FrozenVendorRequest,type VendorRole } from '../vendors/requests.ts';
 import { Store,now,type RunRow } from './store.ts';
 import { checkpoint } from './checkpoint.ts';
 import { pricingFor } from './capabilities.ts';
@@ -14,15 +15,30 @@ export async function guard(env:Env,store:Store,runId:string):Promise<void>{
  const run=await store.run(runId);
  if(run.status!=='running')throw new ServerFailure('E_RUN_STOPPED','blocker','This run is not running.');
  if(String(env.MODEL_CALLS_ENABLED)!=='true')throw new ServerFailure('E_MODEL_CALLS_DISABLED','blocker','Model calls are disabled.');
- const unaccounted=await env.DB.prepare("SELECT COUNT(*) AS count FROM vendor_calls WHERE run_id=? AND role!='batch_metadata' AND status BETWEEN 200 AND 299 AND cost_nano IS NULL").bind(runId).first<{count:number}>();
- if(unaccounted?.count)throw new ServerFailure('E_SPEND_UNACCOUNTED','blocker','A successful vendor response has unaccounted spending. The run has halted for review.');
- if(checkLiveBudget(JSON.parse(run.budget_json) as BudgetDecision,await store.spend(runId)).halt)throw new ServerFailure('E_LIVE_BUDGET','blocker','Recorded spending crossed the run limit.');
+ const unaccounted=await env.DB.prepare("SELECT COUNT(*) AS count FROM vendor_calls WHERE run_id=? AND role!='batch_metadata' AND (status BETWEEN 200 AND 299 OR usage_json IS NOT NULL) AND cost_nano IS NULL").bind(runId).first<{count:number}>();
+ if(unaccounted?.count)throw new ServerFailure('E_SPEND_UNACCOUNTED','blocker','A vendor response has unaccounted spending. The run has halted for review.');
+ const budget=checkRunBudget(readRunBudget(JSON.parse(run.budget_json)),await store.spendByVendor(runId));
+ if(budget.halt)throw new ServerFailure('E_LIVE_BUDGET','blocker',`Recorded spending reached the run limit: ${budget.reached.join(', ')}. Already submitted calls may still add charges.`);
+}
+/** Only retrieve/account work already submitted by this run; never authorize new inference. */
+export async function accountingGuard(env:Env,store:Store,runId:string,batchId:string):Promise<void>{
+ const run=await store.run(runId);
+ if(!['running','halted','closing','closed'].includes(run.status))throw new ServerFailure('E_BATCH_ACCOUNTING_SCOPE','blocker','This run has not submitted work eligible for Batch accounting.');
+ const owned=await env.DB.prepare('SELECT remote_batch_id FROM batch_jobs WHERE remote_batch_id=? AND run_id=?').bind(batchId,runId).first<{remote_batch_id:string}>();
+ if(!owned)throw new ServerFailure('E_BATCH_ACCOUNTING_SCOPE','blocker','Only an already submitted Batch job belonging to this run may be reconciled.');
 }
 export class Runner {
  readonly env:Env;readonly store:Store;readonly run:RunRow;readonly fingerprint:string;readonly step:WorkflowStep;
  constructor(env:Env,run:RunRow,fingerprint:string,step:WorkflowStep){this.env=env;this.store=new Store(env);this.run=run;this.fingerprint=fingerprint;this.step=step;}
  async reference(name:string,action:()=>Promise<string>):Promise<string>{
   return this.step.do(name,{retries:{limit:0,delay:'1 second',backoff:'constant'},timeout:'15 minutes'},async()=>checkpoint(this.store.checkpoints(this.run.id,this.fingerprint),()=>guard(this.env,this.store,this.run.id),name,action));
+ }
+ async accountingStage<T>(name:string,batchId:string,action:()=>Promise<T>):Promise<string>{
+  return this.step.do(name,{retries:{limit:0,delay:'1 second',backoff:'constant'},timeout:'15 minutes'},async()=>checkpoint(this.store.checkpoints(this.run.id,this.fingerprint),()=>accountingGuard(this.env,this.store,this.run.id,batchId),name,async()=>{
+   const started=Date.now();await this.store.event(this.run.id,this.fingerprint,name,'accounting_started',{batchId});
+   const result=await action();const key=await this.store.put(this.run.id,this.fingerprint,name,result);
+   await this.store.event(this.run.id,this.fingerprint,name,'accounting_completed',{key,batchId},Date.now()-started);return key;
+  }));
  }
  async stage<T>(name:string,action:()=>Promise<T>,containsText=false):Promise<string>{
   return this.reference(name,async()=>{
@@ -63,13 +79,14 @@ export class Runner {
       // Persistence precedes even the accounting parse. Recording completes in the same guarded step as HTTP.
       let parsed:Record<string,unknown>|null=null;
       try{const value:unknown=raw===null?null:JSON.parse(raw);if(value&&typeof value==='object'&&!Array.isArray(value))parsed=value as Record<string,unknown>;}catch{/* Invalid JSON remains unmodified; the validator handles it. */}
-      const usage=parsed?.usage&&typeof parsed.usage==='object'&&!Array.isArray(parsed.usage)?parsed.usage as Record<string,unknown>:null;
+      const hasUsage=parsed!==null&&Object.hasOwn(parsed,'usage');
+      const usage=hasUsage?parsed!.usage:null;
       let cost:string|null=null;
-      if(response&&response.status>=200&&response.status<300){
-       try{cost=actualUsageCost(usage,pricingFor(pack,this.run.mode)[role],role==='confidence'?'not_applicable':'disabled');}
+      if(response&&(response.status>=200&&response.status<300||hasUsage)){
+       try{if(response.status>=200&&response.status<300||parsed&&Object.hasOwn(parsed,'model'))verifyModelPolicy(request.modelPolicy,parsed?.model,role);cost=actualUsageCost(usage,pricingFor(pack,this.run.mode)[role],role==='confidence'?'not_applicable':'disabled');}
        catch(error){await this.store.event(this.run.id,this.fingerprint,role,'accounting_failed',{code:error&&typeof error==='object'&&'code' in error?String(error.code):'E_VENDOR_USAGE'});}
       }
-      await this.env.DB.prepare('INSERT INTO vendor_calls(attempt_id,run_id,fingerprint,role,model_requested,model_returned,status,latency_ms,request_id,usage_json,cost_nano,raw_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(activeId,this.run.id,this.fingerprint,role,request.model,typeof parsed?.model==='string'?parsed.model:null,response?.status??null,latencyMs,response?.headers.get('x-request-id')??response?.headers.get('request-id')??null,usage?JSON.stringify(usage):null,cost,rawKey,now()).run();
+      await this.env.DB.prepare('INSERT INTO vendor_calls(attempt_id,run_id,fingerprint,role,model_requested,model_returned,status,latency_ms,request_id,usage_json,cost_nano,raw_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(activeId,this.run.id,this.fingerprint,role,request.model,typeof parsed?.model==='string'?parsed.model:null,response?.status??null,latencyMs,response?.headers.get('x-request-id')??response?.headers.get('request-id')??null,hasUsage?JSON.stringify(usage):null,cost,rawKey,now()).run();
       await this.store.event(this.run.id,this.fingerprint,role,'vendor_call',{attemptId:activeId,status:response?.status??null},latencyMs);
       return rawKey;
      });

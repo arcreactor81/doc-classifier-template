@@ -1,3 +1,5 @@
+import { requireProject } from '../config/project.ts';
+import { sumVendorSpend,type Spend } from '../cost/run-budget.ts';
 import type { CheckpointStore } from './checkpoint.ts';
 import { ServerFailure } from './errors.ts';
 import { reconcileTextWrites } from './closure.ts';
@@ -43,7 +45,13 @@ export class Store {
  async json<T>(key:string):Promise<T>{const object=await this.env.ARTIFACTS.get(key);if(!object)throw new ServerFailure('E_ARTIFACT_MISSING','blocker','A recorded artifact is missing.');return await object.json<T>();}
  async text(key:string):Promise<string>{const object=await this.env.ARTIFACTS.get(key);if(!object)throw new ServerFailure('E_ARTIFACT_MISSING','blocker','A recorded artifact is missing.');return object.text();}
  async event(runId:string|null,fingerprint:string|null,stage:string,kind:string,details:unknown,elapsed:number|null=null):Promise<void>{await this.env.DB.prepare('INSERT INTO events(id,run_id,fingerprint,created_at,stage,kind,elapsed_ms,details_json) VALUES(?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),runId,fingerprint,now(),stage,kind,elapsed,JSON.stringify(details)).run();}
- async spend(runId:string):Promise<string>{const rows=await this.env.DB.prepare('SELECT cost_nano FROM vendor_calls WHERE run_id=? AND cost_nano IS NOT NULL').bind(runId).all<{cost_nano:string}>();return rows.results.reduce((sum,row)=>sum+BigInt(row.cost_nano),0n).toString();}
+ async spendByVendor(runId:string):Promise<Spend>{const rows=await this.env.DB.prepare('SELECT role,cost_nano FROM vendor_calls WHERE run_id=? AND cost_nano IS NOT NULL').bind(runId).all<{role:string;cost_nano:string}>();return sumVendorSpend(rows.results);}
+ async spend(runId:string):Promise<string>{return(await this.spendByVendor(runId)).blended;}
+ async pendingAccounting(runId:string):Promise<number>{
+  const batches=await this.env.DB.prepare("SELECT COUNT(*) AS count FROM batch_jobs j WHERE j.run_id=? AND j.remote_batch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM events e WHERE e.run_id=j.run_id AND e.stage='batch_accounting' AND e.kind='reconciled' AND json_extract(e.details_json,'$.batchKey')=j.id)").bind(runId).first<{count:number}>();
+  const calls=await this.env.DB.prepare("SELECT COUNT(*) AS count FROM checkpoints c WHERE c.run_id=? AND c.status!='complete' AND (c.name LIKE 'confidence-http-%' OR c.name LIKE 'reader-http-%' OR c.name LIKE 'recovery-http-%') AND NOT EXISTS(SELECT 1 FROM vendor_calls v WHERE v.attempt_id=c.run_id||'-'||c.fingerprint||'-'||replace(c.name,'-http-','-'))").bind(runId).first<{count:number}>();
+  return(batches?.count??0)+(calls?.count??0);
+ }
  async unaccounted(runId:string):Promise<number>{return(await this.env.DB.prepare("SELECT COUNT(*) AS count FROM vendor_calls WHERE run_id=? AND role!='batch_metadata' AND cost_nano IS NULL").bind(runId).first<{count:number}>())?.count??0;}
  checkpoints(runId:string,fingerprint:string):CheckpointStore {
   return {
@@ -99,6 +107,12 @@ export class Store {
    recordCleanup:async result=>{await this.event(runId,null,'batch_cleanup',result.stage,{...result,actor});if(result.stage==='deleted')await this.env.DB.prepare("UPDATE batch_jobs SET state='input_deleted' WHERE run_id=? AND input_file_id=?").bind(runId,result.inputFileId).run();},
   });
   if(cleanup.pending)throw new ServerFailure('E_BATCH_CLEANUP_PENDING','blocker','The remote Batch is cancelling. Explicitly close the run again after cancellation finishes; text is still held.');
+  // Reconcile known submitted jobs before uploaded R2 text is removed or closure is reported successful.
+  const submitted=await this.env.DB.prepare("SELECT id,remote_batch_id FROM batch_jobs j WHERE j.run_id=? AND j.remote_batch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM events e WHERE e.run_id=j.run_id AND e.stage='batch_accounting' AND e.kind='reconciled' AND json_extract(e.details_json,'$.batchKey')=j.id)").bind(runId).all<{id:string;remote_batch_id:string}>();
+  if(submitted.results.length){
+   const {reconcileSubmittedBatch}=await import('./batch-runner.ts');const pack=requireProject(JSON.parse(run.pack_json));
+   for(const job of submitted.results)await reconcileSubmittedBatch(this,run,pack,job.id,job.remote_batch_id);
+  }
   const rows=await this.env.DB.prepare('SELECT key FROM artifacts WHERE run_id=? AND contains_text=1 AND deleted_at IS NULL').bind(runId).all<{key:string}>();
   for(const row of rows.results){await this.env.ARTIFACTS.delete(row.key);await this.env.DB.prepare("UPDATE artifacts SET deleted_at=?,state='complete' WHERE key=? AND deleted_at IS NULL").bind(now(),row.key).run();}
   await this.env.DB.prepare("UPDATE runs SET status='closed',closed_at=?,text_held=0 WHERE id=?").bind(now(),runId).run();

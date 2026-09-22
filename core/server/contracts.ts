@@ -3,8 +3,8 @@ import { ServerFailure } from './errors.ts';
 export interface Upload {
  fingerprint:string;originalFilename:string;fullText:string;outline:DigestInput;
  extractorVersion:string;parserVersions:Record<string,string>;needsOutlineRecovery:boolean;
- tokenCounts:{readerInputTokens:number;confidenceInputTokens:number;recoveryInputTokens:number};
- tokenizerIds:{reader:string;confidence:string};
+ tokenCounts:{readerInputTokens:number|null;confidenceInputTokens:number|null;recoveryInputTokens:number|null};
+ tokenizerIds:{reader:string|null;confidence:string};
 }
 export const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 export function requireValue(condition:unknown, detail:string):asserts condition {if(!condition)throw new ServerFailure('E_REQUEST','request',detail);}
@@ -23,8 +23,8 @@ export function parseUpload(raw:unknown):Upload {
  requireValue(object(raw.parserVersions)&&Object.values(raw.parserVersions).every(v=>string(v)&&v.length>0),'Parser versions are required.');
  requireValue(typeof raw.needsOutlineRecovery==='boolean','Outline recovery need must be explicit.');
  requireValue(object(raw.tokenCounts),'Token counts are required.');exact(raw.tokenCounts,['readerInputTokens','confidenceInputTokens','recoveryInputTokens']);
- requireValue(Object.values(raw.tokenCounts).every(position),'Token counts must be nonnegative integers.');
- requireValue(object(raw.tokenizerIds),'Tokenizer IDs are required.');exact(raw.tokenizerIds,['reader','confidence']);requireValue(Object.values(raw.tokenizerIds).every(v=>string(v)&&v.length>0),'Tokenizer IDs must be explicit.');
+ requireValue(Object.values(raw.tokenCounts).every(v=>v===null||position(v)),'Token counts must be nonnegative integers or explicit null when unknown.');
+ requireValue(object(raw.tokenizerIds),'Tokenizer IDs are required.');exact(raw.tokenizerIds,['reader','confidence']);requireValue(string(raw.tokenizerIds.confidence)&&raw.tokenizerIds.confidence.length>0&&(raw.tokenizerIds.reader===null||string(raw.tokenizerIds.reader)&&raw.tokenizerIds.reader.length>0),'Digest tokenizer must be explicit; reader tokenizer may be null.');
  requireValue(object(raw.outline),'Outline is required.');
  requireValue(Object.keys(raw.outline).every(k=>['title','headings','tables','blocks'].includes(k)),'Unexpected outline field.');
  const outline=raw.outline;

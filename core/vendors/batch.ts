@@ -184,6 +184,7 @@ export async function ingestBatchResults(state: BatchSnapshot, expectedIds: read
   if (expected.size !== expectedIds.length || expectedIds.some(value => !value) || expected.size > BATCH_MAX_REQUESTS) fail('E_BATCH_INPUT', 'Expected Batch identifiers must be unique and nonempty.');
   const results = new Map<string, string>(), failures = new Map<string, BatchCorrelation['failures'][number]>(), seen = new Set<string>();
   const retrievalIds: string[] = [];
+  let classificationFailure:ValidationFailure|undefined;
   for (const fileId of new Set([state.outputFileId, state.errorFileId].filter((value): value is string => value !== null))) {
     id(fileId);
     const { response, attempt, start } = await fetchOnce(`https://api.openai.com/v1/files/${fileId}/content`, { method: 'GET' }, context, deps);
@@ -203,6 +204,7 @@ export async function ingestBatchResults(state: BatchSnapshot, expectedIds: read
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
     const handleLine = async (line: string) => {
       lineNumber++;
+      try {
       if (line.endsWith('\r')) line = line.slice(0, -1);
       if (line.length === 0) fail('E_BATCH_RESULT', 'Batch output contains an empty result line.');
       if (encoder.encode(line).byteLength > io.maxResultLineBytes) fail('E_BATCH_RESULT_LIMIT', 'Batch result line exceeds the configured memory limit.');
@@ -212,9 +214,9 @@ export async function ingestBatchResults(state: BatchSnapshot, expectedIds: read
       if (!record(envelope) || typeof envelope.custom_id !== 'string' || !expected.has(envelope.custom_id)) fail('E_BATCH_RESULT', 'Batch output has an unexpected identifier.');
       const customId = envelope.custom_id;
       const result = parseBatchResults(line, [customId])[0];
-      if (result.response && record(result.response.body) && Object.hasOwn(result.response.body, 'model')) verifyModelPolicy(context.modelPolicy, result.response.body.model, 'reader');
       const reference = await deps.stageResult({ customId, result, source: { retrievalId: attempt.attemptId, fileId, lineNumber } });
       if (!reference) fail('E_BATCH_PERSIST', 'Batch result was not durably staged.');
+      if (result.response && record(result.response.body) && Object.hasOwn(result.response.body, 'model')) verifyModelPolicy(context.modelPolicy, result.response.body.model, 'reader');
       if (result.response?.status_code === 401 || result.response?.status_code === 403) fail('E_VENDOR_AUTH', 'Reader credentials were rejected within the Batch.');
       const bodyError = result.response && record(result.response.body) && record(result.response.body.error) ? result.response.body.error : null;
       if (result.response?.status_code === 404 || bodyError?.code === 'model_not_found' || bodyError?.param === 'model') fail('E_MODEL_REJECTED', 'Configured reader model was rejected within the Batch.');
@@ -224,6 +226,10 @@ export async function ingestBatchResults(state: BatchSnapshot, expectedIds: read
         failures.set(customId, { customId, code: 'E_BATCH_DOCUMENT', detail: 'The vendor reported a Batch error for this document.', reference });
       } else results.set(customId, reference);
       seen.add(customId);
+      } catch(error) {
+        if(!(error instanceof ValidationFailure)||['E_RAW_PERSIST','E_BATCH_PERSIST'].includes(error.code))throw error;
+        classificationFailure??=error;
+      }
     };
     for await (const bytes of persistedChunks(response, attempt.attemptId, fileId, deps, io)) {
       try { carry += decoder.decode(bytes, { stream: true }); }
@@ -242,5 +248,6 @@ export async function ingestBatchResults(state: BatchSnapshot, expectedIds: read
     code: state.status === 'expired' ? 'E_BATCH_EXPIRED' : state.status === 'cancelled' ? 'E_BATCH_CANCELLED' : state.status === 'failed' ? 'E_BATCH_FAILED' : 'E_BATCH_MISSING_RESULT',
     detail: 'No result was returned for this expected document.' });
   await deps.guard('reader');
+  if(classificationFailure)throw classificationFailure;
   return { correlationComplete: true, results: [...results].map(([customId, reference]) => ({ customId, reference })), failures: [...failures.values()], retrievalIds };
 }

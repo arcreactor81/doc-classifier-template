@@ -12,8 +12,9 @@ export interface ProjectPack {
  prices:{verifiedAt:string;source:string[];interactive:{confidence:TokenRates;reader:TokenRates;recovery:TokenRates};batch:{confidence:TokenRates;reader:TokenRates;recovery:TokenRates}};
  schemaVersion:1; id:string; productName:string; copyOverrides?:Record<string,string>; typeFile:TypeFile; structuralVocabulary:string[];
  settings:ProjectSettings; pins:{confidence:ModelPin;reader:ModelPin;recovery:ModelPin};
- budget:{limitNano:string;approvedBy:string;approvedAt:string;reason:string};
- tokenizers:{confidence:{id:string;verifiedAt:string;source:string};reader:{id:string;verifiedAt:string;source:string}};
+ /** Historical project sign-off only; every new run supplies its own budget choice. */
+ budget?:{limitNano:string|null;approvedBy:string|null;approvedAt:string|null;reason:string|null}|null;
+ tokenizers:{confidence:{id:string;verifiedAt:string;source:string};reader?:{id:string;verifiedAt:string;source:string}|null};
  limits:{readerRequestsPerMinute:number|null;readerTokensPerMinute:number|null;readerContextTokens:number;readerBatchEnqueuedTokens:number|null;confidenceRequestsPerMinute:number|null;confidenceStateQuestionTokens:number;confidenceAllQuestionTokens:number};
 }
 export interface ConfigIssue {code:string;path:string;detail:string}
@@ -76,10 +77,8 @@ export function validateProject(value:unknown):ConfigIssue[]{
   if(!(pin.policy==='versioned'&&versioned)&&!(pin.policy==='owner_approved_alias'&&alias===pin.id))
    issue('pins.'+role,'Only versioned models or explicitly approved Terra/Luna aliases are permitted.','E_MODEL_POLICY');
  }
- if(!record(value.budget)||!nonempty(value.budget.limitNano)||!/^\d+$/.test(value.budget.limitNano)||!nonempty(value.budget.approvedBy)||!nonempty(value.budget.approvedAt)||!nonempty(value.budget.reason))
-  issue('budget','Owner-approved spending limit and written sign-off are required.');
  if(!record(value.tokenizers))issue('tokenizers','Verified local tokenizer specifications are required.');
- else for(const role of ['confidence','reader']){
+ else for(const role of ['confidence']){
   const spec=value.tokenizers[role];
   if(!record(spec)||!nonempty(spec.id)||!nonempty(spec.verifiedAt)||!nonempty(spec.source))issue('tokenizers.'+role,'Verified tokenizer identity and documentation are required.','E_TOKENIZER_UNVERIFIED');
  }

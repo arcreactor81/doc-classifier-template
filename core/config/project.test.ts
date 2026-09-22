@@ -13,7 +13,7 @@ test('structural vocabulary collision checks every word in names descriptions ex
 });
 test('missing configuration stays missing rather than gaining defaults',()=>{
  const issues=validateProject({});
- for(const field of ['typeFile','settings','pins','budget','tokenizers','limits']) assert.ok(issues.some(x=>x.path.startsWith(field)));
+ for(const field of ['typeFile','settings','pins','tokenizers','limits']) assert.ok(issues.some(x=>x.path.startsWith(field)));
 });
 test('type versions hash exact source bytes and reject mutation assumptions',async()=>{
  assert.equal(await typeVersion('a'),await typeVersion('a'));
@@ -49,4 +49,10 @@ test('explicit unknown throughput limits are valid while missing or invalid valu
   for(const value of [undefined,0,-1,1.5,'unknown'])assert.ok(validateProject({limits:{[field]:value}}).some(issue=>issue.path==='limits.'+field));
  }
  for(const field of ['readerContextTokens','confidenceStateQuestionTokens','confidenceAllQuestionTokens'])assert.ok(validateProject({limits:{[field]:null}}).some(issue=>issue.path==='limits.'+field));
+});
+
+test('run-selected budgets replace project spending approval and reader billing-tokenizer gates',()=>{
+ const issues=validateProject({budget:null,tokenizers:{confidence:{id:'official',verifiedAt:'2026-09-22',source:'https://docs.typesafe.ai'},reader:null}});
+ assert.equal(issues.some(x=>x.path==='budget'||x.path==='tokenizers.reader'),false);
+ assert.ok(validateProject({tokenizers:{confidence:null}}).some(x=>x.path==='tokenizers.confidence'));
 });

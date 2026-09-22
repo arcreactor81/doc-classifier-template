@@ -5,7 +5,7 @@ import type { Runner } from './execution.ts';
 import type { ProjectPack } from '../config/project.ts';
 import type { BatchDependencies } from '../vendors/batch.ts';
 const rates = { inputNanodollarsPerMillion: '1000000000', outputNanodollarsPerMillion: '1000000000' };
-const pack = { pins: { reader: { id: 'gpt-5.6-terra' } }, prices: { verifiedAt: '2026-09-22', source: 'verified', batch: { reader: rates } } } as unknown as ProjectPack;
+const pack = { pins: { reader: { id: 'gpt-5.6-terra', policy:'owner_approved_alias' } }, prices: { verifiedAt: '2026-09-22', source: 'verified', batch: { reader: rates } } } as unknown as ProjectPack;
 function harness() {
   const events: string[] = [], calls = new Map<string, unknown[]>(); let artifacts = 0;
   const runner = { run: { id: 'run1' }, env: { DB: { prepare: () => ({ bind: (...values: unknown[]) => ({ run: async () => {
@@ -19,11 +19,13 @@ const value = (valid = true): Parameters<BatchDependencies['stageResult']>[0] =>
   customId: 'doc1', error: null, response: { status_code: 200, request_id: 'request1', body: { model: 'gpt-5.6-terra', usage: valid ? { input_tokens: 10, output_tokens: 5, input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } } : null } },
 } });
 
-test('Batch raw and usage row persist before an accounting blocker propagates', async () => {
+test('Batch unknown usage persists without interrupting remaining already-submitted accounting', async () => {
   const h = harness();
-  await assert.rejects(h.stage(value(false)), (error: unknown) => (error as { code: string }).code === 'E_VENDOR_USAGE');
-  assert.deepEqual(h.events, ['raw', 'call', 'event']);
+  assert.equal(await h.stage(value(false)), 'artifact1');
+  assert.deepEqual(h.events, ['raw', 'call', 'event', 'event']);
   assert.equal(h.calls.get('batch1-doc1')?.[10], null);
+  await h.stage({ ...value(), customId: 'doc2' });
+  assert.equal(h.calls.get('batch1-doc2')?.[10], '15000');
 });
 
 test('duplicate Batch lines retain separate raw audit records but charge the request only once', async () => {
@@ -45,4 +47,12 @@ test('unsuccessful Batch requests without usage preserve unknown cost and allow 
     assert.equal(h.calls.get('batch1-doc1')?.[10], null);
     assert.deepEqual(h.events, ['raw', 'call', 'event']);
   }
+});
+
+test('malformed usage on unsuccessful Batch response stays explicit for the inference guard',async()=>{
+ const h=harness(),v=value(false);v.result.response!.status_code=400;
+ await h.stage(v);
+ assert.equal(h.calls.get('batch1-doc1')?.[9],'null');
+ assert.equal(h.calls.get('batch1-doc1')?.[10],null);
+ assert.equal(h.events.length,4);
 });

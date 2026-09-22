@@ -11,7 +11,7 @@ export async function health(env:Env):Promise<Record<string,unknown>>{
  for(const issue of validateProject(rawProject))add(issue.code,issue.detail,{path:issue.path});
  const pack=(rawProject&&typeof rawProject==='object'?rawProject:{}) as Partial<ProjectPack>;
  if(pack.id!==String(env.PROJECT_ID))add('E_PROJECT_BINDING','The deployed project identity differs from its selected Git pack.');
- for(const role of ['reader','confidence'] as const){try{codecFor(pack.tokenizers?.[role]?.id??'');}catch(error){add('E_TOKENIZER_UNVERIFIED','An exact local tokenizer must be verified before costs or uploads can be trusted.',{role});}}
+ for(const role of ['confidence'] as const){try{codecFor(pack.tokenizers?.[role]?.id??'');}catch(error){add('E_TOKENIZER_UNVERIFIED','The official Jev tokenizer must be verified before the document digest can be built.',{role});}}
  for(const mode of ['interactive','batch'] as const){try{pricingFor(pack as ProjectPack,mode);}catch(error){add('E_PRICING_UNVERIFIED','Published prices must be recorded before a run can start.',{mode});}}
  if(String(env.MODEL_CALLS_ENABLED)!=='true')add('E_MODEL_CALLS_DISABLED','Model calls are disabled by the deployment.');
  try{accessIssuer(env.ACCESS_TEAM_DOMAIN);if(!env.ACCESS_AUD)throw new Error('Missing audience.');}catch{add('E_ACCESS_CONFIGURATION','Connect the existing Access application identity settings.');}

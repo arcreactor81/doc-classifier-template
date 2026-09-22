@@ -282,3 +282,14 @@ The original section 12 rationale calls the extra Nouls zero cost. Current TypeS
 ### Portable deployment requirements
 
 Independent owners deploy through Cloudflare browser setup onto a workers.dev URL, without a custom domain or local installation. Each owner supplies their own credentials and approves their own spending limit. Project definitions remain Git-led. Worker-specific Access setup is permitted for the installation; unrelated Access applications and policies must remain unchanged. Unknown account throughput is disclosed rather than treated as a missing model capability. Model calls remain disabled until explicit owner activation.
+
+### Owner-approved per-run monitored spending (2026-09-22)
+
+The owner replaces mandatory pre-upload cost prediction with a website budget choice at the start of every run. This supersedes the projected-cost ceiling and project-budget approval gates in sections 3, 5.1, 6, 6.4 and the corresponding section 12 rationale.
+
+- Before any metadata or text upload, the person chooses limits in USD for blended (OpenAI plus TypeSafe), OpenAI, TypeSafe, or any combination. A blank category is explicitly unlimited in that category, not zero. At least one positive limit is required in limited mode.
+- Running with no limits is a separate explicit mode with a prominent warning and an unchecked acknowledgement required before confirmation. Record the limits or unlimited choice, signed-in actor and timestamp immutably for that run. A retry is a new run with a new budget decision.
+- Spending comes from vendor-reported API usage at the run's recorded verified prices, including all attempts and OpenAI outline recovery. Show combined, OpenAI and TypeSafe subtotals and their limits. Preserve raw responses before accounting. Missing usage is unknown, never zero; it remains visible and blocks further inference when accounting cannot be established.
+- Stop new vendor inference when any configured limit is reached or exceeded. These are monitored stop thresholds, not guaranteed invoice caps: in-flight parallel calls and previously submitted Batch work may continue incurring charges before usage arrives. Explain this before confirmation. Continue recording already-incurred costs after stopping; never show a partial run as complete.
+- No exact request-billing tokenizer or recovery cost ceiling is required. Unknown token counts and duration remain explicitly unknown. Provider context limits still apply, and requests are never chunked, trimmed or changed to recover from a context rejection.
+- The official Jev tokenizer is still required for the unchanged 6,000-token digest, separately from billing. No substitute tokenizer is approved. Verified model prices, raw usage accounting, kill switch, unchanged classification rules and each deployment owner's separate validation authorization remain in force. Cloudflare infrastructure charges are outside model-usage totals.

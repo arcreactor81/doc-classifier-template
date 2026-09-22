@@ -1,18 +1,20 @@
-﻿import { projectInteractiveSeconds, type ProjectPack } from '../config/project.ts';
-import { estimateRunCost, type CostDocument, type CostEstimate } from '../cost/cost.ts';
+import { projectInteractiveSeconds, type ProjectPack } from '../config/project.ts';
 import type { QuoteDocument } from './preflight.ts';
 import { uiCopy } from '../ui/copy.ts';
-import { EXECUTION_ATTEMPTS } from '../cost/policy.ts';
-export interface LocalEstimate { batchCapacity:{allowance:number|null}; estimate:CostEstimate;projectLimitNanodollars:string;duration:{interactiveMinimumSecondsAtPublishedLimits:number|null;batchMaximumHours:number};mode:'interactive'|'batch' }
-/** Pure local arithmetic; this function cannot upload filenames, fingerprints, counts or text. */
+export interface LocalEstimate { batchCapacity:{allowance:number|null};duration:{interactiveMinimumSecondsAtPublishedLimits:number|null;batchMaximumHours:number};mode:'interactive'|'batch' }
+/** Local run preview only. No billing estimate or upload; unknown counts remain unknown. */
 export function estimatePreparedRun(documents:readonly QuoteDocument[],pack:ProjectPack,mode:'interactive'|'batch'):LocalEstimate{
-  if(!documents.length)throw new Error(uiCopy.chooseFirst);
-  const costs:CostDocument[]=documents.filter(document=>!document.failed).map(document=>({id:document.fingerprint,confidence:{inputTokens:document.tokenCounts.confidenceInputTokens,maxOutputTokens:0},reader:{inputTokens:document.tokenCounts.readerInputTokens,maxOutputTokens:pack.settings.readerMaxOutputTokens},recovery:document.needsOutlineRecovery?{inputTokens:document.tokenCounts.recoveryInputTokens,maxOutputTokens:pack.settings.recoveryMaxOutputTokens}:null}));
-  const readerTokens=costs.reduce((sum,document)=>sum+document.reader.inputTokens+document.reader.maxOutputTokens,0);
-  const batchTokens=costs.reduce((sum,document)=>sum+document.reader.inputTokens,0);
-  if(!Number.isSafeInteger(readerTokens)||!Number.isSafeInteger(batchTokens))throw new Error(uiCopy.tokenizerUnavailable);
+ if(!documents.length)throw new Error(uiCopy.chooseFirst);
+ const active=documents.filter(document=>!document.failed);
+ const counts=active.map(document=>document.tokenCounts.readerInputTokens);
+ const known=counts.every((count):count is number=>count!==null);
+ let seconds:number|null=null;
+ if(known){
+  if(counts.some(count=>!Number.isSafeInteger(count)||count<0))throw new Error(uiCopy.tokenizerUnavailable);
+  const batchTokens=counts.reduce((sum,count)=>sum+count,0),readerTokens=batchTokens+active.length*pack.settings.readerMaxOutputTokens;
+  if(!Number.isSafeInteger(readerTokens))throw new Error(uiCopy.tokenizerUnavailable);
   if(mode==='batch'&&pack.limits.readerBatchEnqueuedTokens!==null&&batchTokens>pack.limits.readerBatchEnqueuedTokens)throw new Error(uiCopy.batchCapacityExceeded);
-  const seconds=projectInteractiveSeconds(costs.length,readerTokens,pack.limits);
-  return {batchCapacity:{allowance:pack.limits.readerBatchEnqueuedTokens},estimate:estimateRunCost({documents:costs,rates:pack.prices[mode],attempts:EXECUTION_ATTEMPTS}),projectLimitNanodollars:pack.budget.limitNano,duration:{interactiveMinimumSecondsAtPublishedLimits:seconds,batchMaximumHours:24},mode};
+  seconds=projectInteractiveSeconds(active.length,readerTokens,pack.limits);
+ }
+ return {batchCapacity:{allowance:pack.limits.readerBatchEnqueuedTokens},duration:{interactiveMinimumSecondsAtPublishedLimits:seconds,batchMaximumHours:24},mode};
 }
-

@@ -1,11 +1,11 @@
 import { uploadBatchInput,createBatch,pollBatch,ingestBatchResults,type BatchDependencies,type BatchSnapshot,type BatchInputEntry } from '../vendors/batch.ts';
-import { decodeReader,type FrozenVendorRequest,type BatchResult } from '../vendors/requests.ts';
+import { decodeReader,verifyModelPolicy,type FrozenVendorRequest,type BatchResult } from '../vendors/requests.ts';
 import type { ProjectPack } from '../config/project.ts';
 import { actualUsageCost } from '../cost/cost.ts';
 import { groupBatchArtifacts,type BatchArtifact } from './batch-groups.ts';
-import { Runner,guard } from './execution.ts';
+import { Runner,guard,accountingGuard } from './execution.ts';
 import { pricingFor } from './capabilities.ts';
-import { Store,now } from './store.ts';
+import { Store,now,type RunRow } from './store.ts';
 import { ServerFailure,failure } from './errors.ts';
 import type { Upload } from './contracts.ts';
 const io={maxMetadataBytes:1024*1024,maxResultLineBytes:8*1024*1024,streamChunkBytes:64*1024};
@@ -56,13 +56,22 @@ async function coordinateGroup(runner:Runner,pack:ProjectPack,group:BatchArtifac
   const uploaded=await store.json<{fileId:string}>(inputKey);
   const createdKey=await runner.stage(`batch-${groupIndex}-${schemaAttempt}-create`,()=>createBatch(uploaded.fileId,context,deps,io));
   let snapshot=await store.json<BatchSnapshot>(createdKey);
+  // These credentials/dependencies can only retrieve and account for this durable submitted job.
+  const accountingDeps:BatchDependencies={...deps,guard:()=>accountingGuard(env,store,run.id,snapshot.id),fetch:(url,init)=>{
+   if((init.method??'GET')!=='GET')throw new ServerFailure('E_BATCH_ACCOUNTING_OPERATION','blocker','Accounting cannot submit new Batch work.');
+   return deps.fetch(url,init);
+  }};
   for(let poll=0;!['completed','failed','expired','cancelled'].includes(snapshot.status);poll++){
    const retryAfter=snapshot.retryAfter;
    let delay=30000;if(retryAfter){const value=/^\d+(?:\.\d+)?$/.test(retryAfter)?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now();if(!Number.isFinite(value))throw new ServerFailure('E_RETRY_AFTER','blocker','The Batch retry-after header is invalid.');delay=Math.max(delay,value);}
    await runner.step.sleep(`batch-${groupIndex}-${schemaAttempt}-poll-delay-${poll}`,delay);
-   const key=await runner.stage(`batch-${groupIndex}-${schemaAttempt}-poll-${poll}`,()=>pollBatch(snapshot.id,context,deps,io));snapshot=await store.json<BatchSnapshot>(key);
+   const key=await runner.accountingStage(`batch-${groupIndex}-${schemaAttempt}-poll-${poll}`,snapshot.id,()=>pollBatch(snapshot.id,context,accountingDeps,io));snapshot=await store.json<BatchSnapshot>(key);
   }
-  const correlatedKey=await runner.stage(`batch-${groupIndex}-${schemaAttempt}-correlate`,()=>ingestBatchResults(snapshot,entries.map(entry=>entry.customId),context,deps,io));
+  const correlatedKey=await runner.accountingStage(`batch-${groupIndex}-${schemaAttempt}-correlate`,snapshot.id,async()=>{
+   const result=await ingestBatchResults(snapshot,entries.map(entry=>entry.customId),context,accountingDeps,io);
+   if(result.results.length+result.failures.filter(row=>row.reference).length<snapshot.requestCounts.completed)throw new ServerFailure('E_BATCH_ACCOUNTING_INCOMPLETE','blocker','Some completed Batch requests have no retained usage result.');
+   await store.event(run.id,null,'batch_accounting','reconciled',{batchKey,batchId:snapshot.id});return result;
+  });
   const correlated=await store.json<Awaited<ReturnType<typeof ingestBatchResults>>>(correlatedKey);
   const retry:BatchInputEntry[]=[];
   const validatedKey=await runner.stage(`batch-${groupIndex}-${schemaAttempt}-validate`,async()=>{
@@ -102,27 +111,72 @@ async function coordinate(runner:Runner,pack:ProjectPack):Promise<void>{
  for(const [groupIndex,group] of groups.entries())await coordinateGroup(runner,pack,group,groupIndex);
 }
 
-export function batchResultStager(runner:Runner,pack:ProjectPack,batchKey:string):BatchDependencies['stageResult'] {
+export function batchResultStager(runner:Pick<Runner,'store'|'env'|'run'>,pack:ProjectPack,batchKey:string):BatchDependencies['stageResult'] {
  const {store,env,run}=runner;
  return async value=>{
     const key=await store.put(run.id,value.customId,'batch_result',value);
     const body=value.result.response?.body;
     const raw=body&&typeof body==='object'?body as Record<string,unknown>:null;
-    const usage=raw?.usage&&typeof raw.usage==='object'?raw.usage as Record<string,unknown>:null;
+    const hasUsage=raw!==null&&Object.hasOwn(raw,'usage');
+    const usage=hasUsage?raw.usage:null;
     let cost:string|null=null,accountingFailure:unknown=null;
     const status=value.result.response?.status_code;
     const unsuccessful=value.result.response===null&&value.result.error!==null || typeof status==='number'&&(status<200||status>=300);
-    const accountingDisposition=usage?'reported_usage':unsuccessful?'unsuccessful_no_usage':'unaccounted_success';
-    if(usage||!unsuccessful){
-     try{cost=actualUsageCost(usage,pricingFor(pack,'batch').reader,'disabled');}
+    const accountingDisposition=hasUsage?'reported_usage':unsuccessful?'unsuccessful_no_usage':'unaccounted_success';
+    if(hasUsage||!unsuccessful){
+     try{
+      if(!unsuccessful)verifyModelPolicy(pack.pins.reader,raw?.model,'reader');
+      cost=actualUsageCost(usage,pricingFor(pack,'batch').reader,'disabled');
+     }
      catch(error){accountingFailure=error;}
     }
     const accountingId=`${batchKey}-${value.customId}`;
     // Every received line has its own immutable artifact, but one submitted request is charged once.
-    const recorded=await env.DB.prepare('INSERT OR IGNORE INTO vendor_calls(attempt_id,run_id,fingerprint,role,model_requested,model_returned,status,latency_ms,request_id,usage_json,cost_nano,raw_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(accountingId,run.id,value.customId,'reader',pack.pins.reader.id,typeof raw?.model==='string'?raw.model:null,value.result.response?.status_code??null,null,value.result.response?.request_id??null,usage?JSON.stringify(usage):null,cost,key,now()).run();
+    const recorded=await env.DB.prepare('INSERT OR IGNORE INTO vendor_calls(attempt_id,run_id,fingerprint,role,model_requested,model_returned,status,latency_ms,request_id,usage_json,cost_nano,raw_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(accountingId,run.id,value.customId,'reader',pack.pins.reader.id,typeof raw?.model==='string'?raw.model:null,value.result.response?.status_code??null,null,value.result.response?.request_id??null,hasUsage?JSON.stringify(usage):null,cost,key,now()).run();
     await store.event(run.id,value.customId,'batch','result_staged',{key,source:value.source,accountingId,accountingDisposition,charged:recorded.meta.changes===1&&cost!==null});
-    if(recorded.meta.changes===1&&accountingFailure)throw accountingFailure;
+    if(recorded.meta.changes===1&&accountingFailure)await store.event(run.id,value.customId,'batch','accounting_failed',{accountingId,code:failure(accountingFailure).code});
+    // The ordinary inference guard will halt on unknown usage after the complete result stream is retained.
+    // Do not abandon charges for later lines in an already-submitted job.
     return key;
 
  };
+}
+
+/** Reconcile only an existing remote job. Reads request identity metadata, never uploaded text or request bodies. */
+export async function reconcileSubmittedBatch(store:Store,run:RunRow,pack:ProjectPack,batchKey:string,batchId:string):Promise<void>{
+ const env=store.env;
+ await accountingGuard(env,store,run.id,batchId);
+ const job=await env.DB.prepare('SELECT id FROM batch_jobs WHERE id=? AND run_id=? AND remote_batch_id=?').bind(batchKey,run.id,batchId).first();
+ if(!job)throw new ServerFailure('E_BATCH_ACCOUNTING_ID','blocker','The Batch accounting identity is not recorded for this run.');
+ const match=/-g(\d+)-s[12]$/.exec(batchKey);
+ const plan=await env.DB.prepare("SELECT artifact_key FROM checkpoints WHERE run_id=? AND name='batch-group-plan' AND status='complete'").bind(run.id).first<{artifact_key:string}>();
+ if(!match||!plan)throw new ServerFailure('E_BATCH_ACCOUNTING_PLAN','blocker','The submitted Batch identity plan is missing.');
+ const groups=await store.json<BatchArtifact[][]>(plan.artifact_key),group=groups[Number(match[1])];
+ if(!group?.length)throw new ServerFailure('E_BATCH_ACCOUNTING_PLAN','blocker','The submitted Batch group is missing.');
+ const context={runId:run.id,batchKey,modelPolicy:pack.pins.reader};
+ const deps:BatchDependencies={
+  guard:()=>accountingGuard(env,store,run.id,batchId),readSecret:()=>env.OPENAI_API_KEY.get(),now:Date.now,
+  attemptId:()=>batchKey+'-accounting-'+crypto.randomUUID(),
+  fetch:(url,init)=>{
+   if((init.method??'GET')!=='GET')throw new ServerFailure('E_BATCH_ACCOUNTING_OPERATION','blocker','Accounting cannot submit new Batch work.');
+   return fetch(url,{...init,signal:AbortSignal.timeout(10*60*1000)});
+  },
+  persistRaw:async value=>{await store.put(run.id,null,'batch_raw',value,false,run.id+'/batch/raw/'+value.attemptId+'.json');},
+  logCall:async call=>{await env.DB.prepare('INSERT INTO vendor_calls(attempt_id,run_id,fingerprint,role,model_requested,model_returned,status,latency_ms,request_id,usage_json,cost_nano,raw_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(call.attemptId,run.id,null,'batch_metadata',call.modelRequested,call.modelReturned,call.status,call.latencyMs,call.requestId,null,'0',run.id+'/batch/raw/'+call.attemptId+'.json',now()).run();},
+  persistBatchState:async event=>{await store.put(run.id,null,'batch_state',event);},
+  persistChunk:async value=>{
+   const key=run.id+'/batch/chunks/'+value.retrievalId+'/'+value.index+'.bin';
+   await env.DB.prepare('INSERT INTO artifacts(key,run_id,kind,contains_text,created_at) VALUES(?,?,?,0,?)').bind(key,run.id,'batch_raw_chunk',now()).run();
+   if(!await env.ARTIFACTS.put(key,value.bytes,{onlyIf:new Headers({'If-None-Match':'*'})}))throw new ServerFailure('E_ARTIFACT_EXISTS','blocker','A Batch response chunk already exists.');
+   await env.DB.prepare("UPDATE artifacts SET state='complete' WHERE key=?").bind(key).run();
+  },
+  stageResult:batchResultStager({store,env,run},pack,batchKey),
+ };
+ const snapshot=await pollBatch(batchId,context,deps,io);
+ if(!['completed','failed','expired','cancelled'].includes(snapshot.status))throw new ServerFailure('E_BATCH_ACCOUNTING_PENDING','blocker','Submitted Batch usage is still pending.');
+ const correlated=await ingestBatchResults(snapshot,group.map(row=>row.fingerprint),context,deps,io);
+ // Retry submissions are a subset of the frozen group. Missing unsent IDs do not create decisions.
+ const observed=correlated.results.length+correlated.failures.filter(row=>row.reference).length;
+ if(observed<snapshot.requestCounts.completed)throw new ServerFailure('E_BATCH_ACCOUNTING_INCOMPLETE','blocker','Some completed Batch requests have no retained usage result.');
+ await store.event(run.id,null,'batch_accounting','reconciled',{batchKey,batchId});
 }

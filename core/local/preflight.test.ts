@@ -1,35 +1,33 @@
-﻿import { test } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareLocalRun } from './preflight.ts';
-import { codecFor } from './tokenizers.ts';
+import { parseUpload } from '../server/contracts.ts';
 import type { ProjectPack } from '../config/project.ts';
 import type { LocalDocument } from './state.ts';
-import { buildReaderRequest, buildConfidenceRequest } from '../vendors/requests.ts';
-import { buildDigest, DIGEST_POLICY_VERSION } from '../digest/digest.ts';
-
-const codec={id:'test_codec',countTokens:(text:string)=>text.length,prefixWithinBudget:(text:string,fits:(text:string)=>boolean)=>{let result='';for(const char of text){if(!fits(result+char))break;result+=char;}return result;}};
-const pack={typeFile:{types:[{id:'type_a',name:'A',what:'B',not_for:'C',examples:['D']}],none_of_these:{name:'E',what:'F'}},pins:{reader:{id:'gpt-5.6-terra',policy:'owner_approved_alias',date:'2026-09-22',reason:'owner'},confidence:{id:'jev-1.13.0',policy:'versioned',date:'2026-09-22',reason:'owner'}},settings:{readerEffort:'low',readerMaxOutputTokens:100,digestBudget:6000},structuralVocabulary:[],budget:{approvedBy:'owner',approvedAt:'2026-09-22'},tokenizers:{reader:{id:codec.id},confidence:{id:codec.id}}} as unknown as ProjectPack;
-const document={fingerprint:'a'.repeat(64),originalFilename:'type_a.docx',fullText:String.fromCharCode(71,72),outline:{headings:[],tables:[],blocks:[{position:0,text:String.fromCharCode(71,72)}]},extractorVersion:'1',parserVersions:{zip:'1',xml:'1',pdf:'1'},needsOutlineRecovery:false};
-const local:LocalDocument={runId:'local',sourcePath:document.originalFilename,fingerprint:document.fingerprint,state:'extracted',document};
-
-test('verified tokenizer registry has no invented codec fallback',()=>{assert.throws(()=>codecFor('missing'),error=>error instanceof Error&&'code' in error&&error.code==='E_TOKENIZER_UNVERIFIED');});
-test('preflight counts exact shared request bodies including schemas and taxonomy',()=>{
- const [prepared]=prepareLocalRun([local],pack,{reader:codec,confidence:codec});
- const reader=buildReaderRequest({pin:pack.pins.reader,typeFile:pack.typeFile,text:document.fullText,effort:pack.settings.readerEffort,maxOutputTokens:pack.settings.readerMaxOutputTokens});
- const digest=buildDigest(document.outline,{budget:6000,vocabulary:[],codec,policy:{version:DIGEST_POLICY_VERSION,acceptedBy:pack.budget.approvedBy,acceptedAt:pack.budget.approvedAt,tokenizerId:codec.id}});
- const confidence=buildConfidenceRequest({pin:pack.pins.confidence,typeFile:pack.typeFile,serializedDigest:digest.serialized});
- assert.equal(prepared.quote.tokenCounts.readerInputTokens,reader.body.length);
- assert.equal(prepared.quote.tokenCounts.confidenceInputTokens,confidence.body.length);
- assert.ok(prepared.quote.tokenCounts.readerInputTokens>document.fullText.length);
- assert.equal(prepared.quote.failed,false);
+import type { DigestTokenCodec } from '../digest/digest.ts';
+const codec:DigestTokenCodec={id:'test-only',countTokens:text=>text.length,prefixWithinBudget:(text,fits)=>{for(let n=text.length;n>=0;n--)if(fits(text.slice(0,n)))return text.slice(0,n);return '';}};
+const pack={settings:{digestBudget:6000},structuralVocabulary:[],tokenizers:{confidence:{id:codec.id,source:'test fixture',verifiedAt:'2026-09-22'},reader:null},budget:null} as unknown as ProjectPack;
+const local={runId:'local',sourcePath:'one.docx',fingerprint:'a'.repeat(64),state:'extracted',document:{fingerprint:'a'.repeat(64),originalFilename:'one.docx',fullText:'A heading\nBody',outline:{title:'A heading',headings:[],tables:[],blocks:[{position:0,text:'A heading\nBody'}]},extractorVersion:'test',parserVersions:{zip:'test',xml:'test',pdf:'test'},needsOutlineRecovery:false}} as LocalDocument;
+test('preparation requires only digest codec and represents unknown billing counts explicitly',()=>{
+ const [result]=prepareLocalRun([local],pack,{confidence:codec});
+ assert.deepEqual(result.quote.tokenCounts,{readerInputTokens:null,confidenceInputTokens:null,recoveryInputTokens:null});
+ assert.equal(parseUpload(result.upload).tokenizerIds.reader,null);
 });
-test('recovery cannot receive an invented confidence-token ceiling',()=>{assert.throws(()=>prepareLocalRun([{...local,document:{...document,needsOutlineRecovery:true}}],pack,{reader:codec,confidence:codec}),/recovery/i);});
-test('failed documents are explicit zero-call quote items and text-free uploads',()=>{
- const failed:LocalDocument={runId:'local',sourcePath:'type_a.bin',fingerprint:'b'.repeat(64),state:'could_not_process',failure:{code:'E_UNSUPPORTED_FORMAT',message:'Unsupported file type.'}};
- const [result]=prepareLocalRun([failed],pack,{reader:codec,confidence:codec});
- assert.equal(result.quote.failed,true);assert.deepEqual(result.quote.tokenCounts,{readerInputTokens:0,confidenceInputTokens:0,recoveryInputTokens:0});assert.equal('fullText' in result.upload,false);
+test('outline recovery is no longer blocked by an unavailable cost prediction',()=>{
+ const recovery={...local,document:{...('document' in local?local.document:{}),needsOutlineRecovery:true}} as LocalDocument;
+ assert.equal(prepareLocalRun([recovery],pack,{confidence:codec})[0].quote.needsOutlineRecovery,true);
+});
+test('missing official digest codec remains a blocker and invalid token claims are rejected',()=>{
+ assert.throws(()=>prepareLocalRun([local],pack),error=>(error as {code:string}).code==='E_TOKENIZER_UNVERIFIED');
+ const result=prepareLocalRun([local],pack,{confidence:codec})[0];
+ for(const value of [-1,1.5,'unknown',undefined])assert.throws(()=>parseUpload({...result.upload,tokenCounts:{readerInputTokens:value,confidenceInputTokens:null,recoveryInputTokens:null}}));
+});
+
+test('failed documents remain explicit zero-call entries without uploaded text',()=>{
+ const failed:LocalDocument={runId:'local',sourcePath:'one.bin',fingerprint:'b'.repeat(64),state:'could_not_process',failure:{code:'E_UNSUPPORTED_FORMAT',message:'Unsupported file type.'}};
+ const [result]=prepareLocalRun([failed],pack,{confidence:codec});assert.equal(result.quote.failed,true);assert.deepEqual(result.quote.tokenCounts,{readerInputTokens:0,confidenceInputTokens:0,recoveryInputTokens:0});assert.equal('fullText' in result.upload,false);
 });
 test('unfinished extraction and duplicate content cannot silently shrink the run',()=>{
- assert.throws(()=>prepareLocalRun([{runId:'local',sourcePath:'a',fingerprint:'a'.repeat(64),state:'not started'}],pack,{reader:codec,confidence:codec}),/extraction/i);
- assert.throws(()=>prepareLocalRun([local,{...local,sourcePath:'other'}],pack,{reader:codec,confidence:codec}),/duplicate/i);
+ assert.throws(()=>prepareLocalRun([{runId:'local',sourcePath:'one',fingerprint:'a'.repeat(64),state:'not started'}],pack,{confidence:codec}),/extraction/i);
+ assert.throws(()=>prepareLocalRun([local,{...local,sourcePath:'other'}],pack,{confidence:codec}),/duplicate/i);
 });

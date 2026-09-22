@@ -106,3 +106,11 @@ First match wins. The rule id is recorded. 0.5 on the Noul is the probability mi
 ## Public snapshot verification
 
 The exact sanitized export passed a clean npm ci, 164 tests, browser/Worker TypeScript checks, production UI build and Wrangler dry-run. Placeholder resources only; no deployment or vendor call was performed by these checks. A recursive pre-publication scan found no known private account identifiers, personal paths/email, original private commit/deployment identifiers or credential-shaped tokens in the exported source. Independent privacy review is also required before visibility changes.
+
+## Monitored run budgets (2026-09-22)
+
+Replaced required upfront cost prediction with per-run combined/OpenAI/TypeSafe limits or explicitly acknowledged unlimited spending. Records actor/time and actual API usage with exact integer arithmetic; stops new calls at any reached limit while accounting for submitted work. Unknown charges remain visible. Local digest policy and classification requests are unchanged; the official Jev tokenizer is still required. Budget and reader billing-tokenizer fields are no longer readiness gates. Batch accounting is restricted to known submitted jobs and GET-only retrieval; successful closure reconciles terminal jobs before removing uploaded text. No migration or model activation is required.
+
+Private implementation passed 181 tests, both TypeScript checks, production UI build and browser budget consent checks. Public export receives its own release verification. No live model validation or accuracy result is claimed.
+
+Public release copy review: the original snapshot's open item for exact request tokenization and a pre-upload cost bound is superseded by monitored per-run spending. The remaining tokenizer task is solely the official Jev implementation for the unchanged 6,000-token digest. New runs record their own budget decision; a mandatory project-pack budget is no longer a readiness requirement. Historical design excerpts above are read together with the latest DESIGN amendment.

@@ -1,8 +1,7 @@
-import { projectInteractiveSeconds } from '../config/project.ts';
 import { requireProject,typeVersion,type ProjectPack } from '../config/project.ts';
-import { estimateRunCost,authorizeBudget,type CostDocument } from '../cost/cost.ts';
+import { authorizeRunBudget,readRunBudget } from '../cost/run-budget.ts';
 import { buildDigest,DIGEST_POLICY_VERSION,type DigestResult } from '../digest/digest.ts';
-import { buildReaderRequest,buildConfidenceRequest,buildRecoveryRequest,VENDOR_PROMPTS } from '../vendors/requests.ts';
+import { VENDOR_PROMPTS } from '../vendors/requests.ts';
 import type { ConfidenceOutput,ReaderOutput } from '../vendors/validate.ts';
 import { decide,type Decision } from '../domain/decision.ts';
 import type { BuilderManifest,BuilderEntry } from '../builder/builder.ts';
@@ -10,14 +9,14 @@ import { diffCorrection,type CorrectionTreeFile } from '../correction/diff.ts';
 import { proposeCorrections,type CorrectionProposals,type FolderDecision,type ProposalEvidence } from '../correction/proposals.ts';
 import { actorFor } from './auth.ts';
 import { health,projectSource,requireReady } from './health.ts';
-import { codecFor,pricingFor,EXECUTION_ATTEMPTS } from './capabilities.ts';
+import { codecFor,EXECUTION_ATTEMPTS } from './capabilities.ts';
 import { Store,shaText,now,type RunRow } from './store.ts';
 import { object,requireValue,exact,identity,jsonBody,parseUpload,validateManifestReady,type Upload } from './contracts.ts';
 import { ServerFailure,failure,serverCopy } from './errors.ts';
 
 function response(value:unknown,status=200):Response{return Response.json(value,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});}
 async function authorizeRun(store:Store,id:string,actor:string):Promise<RunRow>{const run=await store.run(id);if(run.actor!==actor)throw new ServerFailure('E_RUN_FORBIDDEN','request','This run belongs to a different signed-in person.',403);return run;}
-interface QuoteDocument {fingerprint:string;originalFilename:string;tokenCounts:{readerInputTokens:number;confidenceInputTokens:number;recoveryInputTokens:number};needsOutlineRecovery:boolean;failed:boolean}
+interface QuoteDocument {fingerprint:string;originalFilename:string;tokenCounts:{readerInputTokens:number|null;confidenceInputTokens:number|null;recoveryInputTokens:number|null};needsOutlineRecovery:boolean;failed:boolean}
 export async function manifestFor(store:Store,run:RunRow):Promise<BuilderManifest>{
  const documents=await store.documents(run.id);validateManifestReady(run.status,run.expected_count,documents.filter(doc=>doc.decision_json!==null).length);
  if(run.manifest_key)return store.json<BuilderManifest>(run.manifest_key);
@@ -35,55 +34,43 @@ export async function manifestFor(store:Store,run:RunRow):Promise<BuilderManifes
 async function quote(request:Request,env:Env,store:Store,actor:string):Promise<Response>{
  await requireReady(env);const pack=requireProject(projectSource),raw=await jsonBody(request);
  requireValue(object(raw),'A quote request is required.');exact(raw,['documents','mode']);requireValue(raw.mode==='interactive'||raw.mode==='batch','Select a run mode.');requireValue(Array.isArray(raw.documents)&&raw.documents.length>0,'Choose at least one document.');
- const ids=new Set<string>();const docs:QuoteDocument[]=[];const costs:CostDocument[]=[];
+ const ids=new Set<string>();const docs:QuoteDocument[]=[];
  for(const value of raw.documents){
-  requireValue(object(value),'Invalid quote document.');exact(value,['fingerprint','originalFilename','tokenCounts','needsOutlineRecovery','failed']);identity(value);
+  requireValue(object(value),'Invalid preflight document.');exact(value,['fingerprint','originalFilename','tokenCounts','needsOutlineRecovery','failed']);identity(value);
   requireValue(!ids.has(String(value.fingerprint)),'Duplicate document fingerprints are not allowed in a run.');ids.add(String(value.fingerprint));
-  requireValue(typeof value.needsOutlineRecovery==='boolean'&&typeof value.failed==='boolean'&&object(value.tokenCounts),'Explicit document counts and recovery state are required.');exact(value.tokenCounts,['readerInputTokens','confidenceInputTokens','recoveryInputTokens']);requireValue(Object.values(value.tokenCounts).every(v=>Number.isSafeInteger(v)&&Number(v)>=0),'Invalid token counts.');
-  const document=value as unknown as QuoteDocument;docs.push(document);
-  if(!document.failed)costs.push({id:document.fingerprint,confidence:{inputTokens:document.tokenCounts.confidenceInputTokens,maxOutputTokens:0},reader:{inputTokens:document.tokenCounts.readerInputTokens,maxOutputTokens:pack.settings.readerMaxOutputTokens},recovery:document.needsOutlineRecovery?{inputTokens:document.tokenCounts.recoveryInputTokens,maxOutputTokens:pack.settings.recoveryMaxOutputTokens}:null});
+  requireValue(typeof value.needsOutlineRecovery==='boolean'&&typeof value.failed==='boolean'&&object(value.tokenCounts),'Explicit recovery state and token-count availability are required.');exact(value.tokenCounts,['readerInputTokens','confidenceInputTokens','recoveryInputTokens']);requireValue(Object.values(value.tokenCounts).every(v=>v===null||Number.isSafeInteger(v)&&Number(v)>=0),'Invalid token counts.');
+  docs.push(value as unknown as QuoteDocument);
  }
- const batchInputTokens=costs.reduce((sum,document)=>sum+document.reader.inputTokens,0);
- if(raw.mode==='batch'){
-  if(pack.limits.readerBatchEnqueuedTokens!==null&&batchInputTokens>pack.limits.readerBatchEnqueuedTokens)throw new ServerFailure('E_BATCH_QUEUE_LIMIT','blocker','This run exceeds the configured Batch input-token allowance. Choose interactive mode or explicitly create smaller runs.');
- }
- const estimate=estimateRunCost({documents:costs,rates:pricingFor(pack,raw.mode),attempts:EXECUTION_ATTEMPTS});
  const id=crypto.randomUUID(),version=await typeVersion(JSON.stringify(pack.typeFile));
- await env.DB.prepare('INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES(?,?,?,?,?,?,?,?)').bind(id,actor,now(),raw.mode,version,await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS})),JSON.stringify(docs),JSON.stringify(estimate)).run();
- const readerTokens=costs.reduce((sum,doc)=>sum+doc.reader.inputTokens+doc.reader.maxOutputTokens,0);
- const interactiveSeconds=projectInteractiveSeconds(costs.length,readerTokens,pack.limits);
- return response({quoteId:id,typeVersion:version,estimate,projectLimitNanodollars:pack.budget.limitNano,duration:{interactiveMinimumSecondsAtPublishedLimits:interactiveSeconds,batchMaximumHours:24},batchCapacity:{inputTokens:batchInputTokens,allowance:pack.limits.readerBatchEnqueuedTokens,basis:'run_demand_only_vendor_enforces_total'},mode:raw.mode});
+ await env.DB.prepare('INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES(?,?,?,?,?,?,?,?)').bind(id,actor,now(),raw.mode,version,await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS})),JSON.stringify(docs),JSON.stringify({policy:'reported_usage',version:1})).run();
+ return response({quoteId:id,typeVersion:version,mode:raw.mode});
 }
 async function createRun(request:Request,env:Env,store:Store,actor:string):Promise<Response>{
- await requireReady(env);const raw=await jsonBody(request);requireValue(object(raw),'A run request is required.');exact(raw,['quoteId','override']);requireValue(typeof raw.quoteId==='string'&&typeof raw.override==='boolean','A quote and explicit budget decision are required.');
- const pack=requireProject(projectSource),quote=await env.DB.prepare('SELECT * FROM quotes WHERE id=? AND actor=?').bind(raw.quoteId,actor).first<{id:string;mode:'interactive'|'batch';type_version:string;pack_hash:string;request_json:string;estimate_json:string}>();requireValue(quote,'The cost quote is not available to this person.');
- requireValue(quote.pack_hash===await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS}))&&quote.type_version===await typeVersion(JSON.stringify(pack.typeFile)),'The project changed after this quote. Request a new quote.');
- const estimate=JSON.parse(quote.estimate_json),docs=JSON.parse(quote.request_json) as QuoteDocument[];
- const budget=authorizeBudget({ceilingNanodollars:estimate.worstCaseNanodollars,projectLimitNanodollars:pack.budget.limitNano,override:raw.override,actor,timestamp:now()});
- if(budget.status==='refused')throw new ServerFailure('E_PROJECT_BUDGET','blocker','The projected ceiling exceeds the spending limit. Review the explicit unlimited-spending override.');
- const prior=await env.DB.prepare('SELECT id FROM runs WHERE quote_id=?').bind(quote.id).first<{id:string}>();if(prior)return response({runId:prior.id});
+ await requireReady(env);const raw=await jsonBody(request);requireValue(object(raw),'A run request is required.');exact(raw,['quoteId','budget']);requireValue(typeof raw.quoteId==='string','A preflight confirmation and explicit budget decision are required.');
+ const pack=requireProject(projectSource),quote=await env.DB.prepare('SELECT * FROM quotes WHERE id=? AND actor=?').bind(raw.quoteId,actor).first<{id:string;mode:'interactive'|'batch';type_version:string;pack_hash:string;request_json:string;estimate_json:string}>();requireValue(quote,'The preflight confirmation is not available to this person.');
+ requireValue(quote.pack_hash===await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS}))&&quote.type_version===await typeVersion(JSON.stringify(pack.typeFile)),'The project changed after this confirmation. Confirm the run again.');
+ const docs=JSON.parse(quote.request_json) as QuoteDocument[];
+ let budget:ReturnType<typeof authorizeRunBudget>;
+ try{budget=authorizeRunBudget(raw.budget,actor,now());}catch(error){throw new ServerFailure('E_RUN_BUDGET','request',error instanceof Error?error.message:'Invalid run budget.');}
+ const prior=await env.DB.prepare('SELECT id,budget_json FROM runs WHERE quote_id=?').bind(quote.id).first<{id:string;budget_json:string}>();
+ if(prior){const existing=readRunBudget(JSON.parse(prior.budget_json));requireValue(existing.mode===budget.mode&&existing.unlimitedAcknowledged===budget.unlimitedAcknowledged&&JSON.stringify(existing.limits)===JSON.stringify(budget.limits),'This confirmation already created a run with a different spending decision. Confirm a new run to change limits.');return response({runId:prior.id});}
  const control=await env.DB.prepare('SELECT threshold,threshold_justification FROM controls WHERE id=1').first<{threshold:number;threshold_justification:string}>();if(!control)throw new ServerFailure('E_STORAGE_D1','blocker','Run controls are missing.');
  const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO runs(id,actor,status,created_at,mode,expected_count,threshold,threshold_justification,type_version,pack_json,budget_json,quote_id) VALUES(?,?,'uploading',?,?,?,?,?,?,?,?,?)").bind(id,actor,now(),quote.mode,docs.length,control.threshold,control.threshold_justification,quote.type_version,JSON.stringify(pack),JSON.stringify(budget),quote.id).run();
  await store.event(id,null,'run','created',{budget,mode:quote.mode});return response({runId:id},201);
 }
 export function verifyUploadTokens(upload:Upload,pack:ProjectPack):void{
- const readerCodec=codecFor(pack.tokenizers.reader.id),confidenceCodec=codecFor(pack.tokenizers.confidence.id);
- requireValue(upload.tokenizerIds.reader===readerCodec.id&&upload.tokenizerIds.confidence===confidenceCodec.id,'Uploaded tokenizer versions do not match the project.');
- const reader=buildReaderRequest({pin:pack.pins.reader,typeFile:pack.typeFile,text:upload.fullText,effort:pack.settings.readerEffort,maxOutputTokens:pack.settings.readerMaxOutputTokens});
- requireValue(readerCodec.countTokens(reader.body)===upload.tokenCounts.readerInputTokens,'Reader token count differs from the confirmed quote.');
- const digest=buildDigest(upload.outline,{budget:pack.settings.digestBudget,vocabulary:pack.structuralVocabulary,codec:confidenceCodec,policy:{version:DIGEST_POLICY_VERSION,acceptedBy:pack.budget.approvedBy,acceptedAt:pack.budget.approvedAt,tokenizerId:confidenceCodec.id}});
- const confidence=buildConfidenceRequest({pin:pack.pins.confidence,typeFile:pack.typeFile,serializedDigest:digest.serialized});
- requireValue(confidenceCodec.countTokens(confidence.body)<=upload.tokenCounts.confidenceInputTokens,'Confidence-check token count exceeds the confirmed ceiling.');
- if(upload.needsOutlineRecovery){const recovery=buildRecoveryRequest({pin:pack.pins.recovery,text:upload.fullText,effort:pack.settings.readerEffort,maxOutputTokens:pack.settings.recoveryMaxOutputTokens});requireValue(readerCodec.countTokens(recovery.body)===upload.tokenCounts.recoveryInputTokens,'Recovery token count differs from the confirmed quote.');}
+ const confidenceCodec=codecFor(pack.tokenizers.confidence.id);
+ requireValue(upload.tokenizerIds.confidence===confidenceCodec.id,'Uploaded digest tokenizer does not match the project.');
+ if(!upload.needsOutlineRecovery)buildDigest(upload.outline,{budget:pack.settings.digestBudget,vocabulary:pack.structuralVocabulary,codec:confidenceCodec,policy:{version:DIGEST_POLICY_VERSION,acceptedBy:pack.tokenizers.confidence.source,acceptedAt:pack.tokenizers.confidence.verifiedAt,tokenizerId:confidenceCodec.id}});
 }
 async function uploadDocument(request:Request,env:Env,store:Store,run:RunRow):Promise<Response>{
  requireValue(run.status==='uploading','This run is no longer accepting uploads.');const pack=requireProject(JSON.parse(run.pack_json));const raw=await jsonBody(request);requireValue(object(raw),'A document object is required.');identity(raw);
  const hash=await shaText(JSON.stringify(raw));const previous=await env.DB.prepare('SELECT input_hash FROM documents WHERE run_id=? AND fingerprint=?').bind(run.id,raw.fingerprint).first<{input_hash:string}>();if(previous){requireValue(previous.input_hash===hash,'An upload with this fingerprint already exists with different content.');return response({uploaded:true,idempotent:true});}
- const quoted=await env.DB.prepare('SELECT request_json FROM quotes WHERE id=(SELECT quote_id FROM runs WHERE id=?)').bind(run.id).first<{request_json:string}>();const docs=JSON.parse(quoted!.request_json) as QuoteDocument[];const index=docs.findIndex(doc=>doc.fingerprint===raw.fingerprint);requireValue(index>=0,'The document was not included in the confirmed quote.');const expected=docs[index];requireValue(raw.originalFilename===expected.originalFilename,'The filename differs from the confirmed quote.');
+ const quoted=await env.DB.prepare('SELECT request_json FROM quotes WHERE id=(SELECT quote_id FROM runs WHERE id=?)').bind(run.id).first<{request_json:string}>();const docs=JSON.parse(quoted!.request_json) as QuoteDocument[];const index=docs.findIndex(doc=>doc.fingerprint===raw.fingerprint);requireValue(index>=0,'The document was not included in the confirmed preflight.');const expected=docs[index];requireValue(raw.originalFilename===expected.originalFilename,'The filename differs from the confirmed preflight.');
  let key:string|null=null,extractor:string|null=null,extraction:string|null=null,decision:Decision|null=null,failed:unknown=null;
  if(Object.hasOwn(raw,'failure')){exact(raw,['fingerprint','originalFilename','failure']);requireValue(expected.failed&&object(raw.failure),'The quote must record the local extraction failure.');exact(raw.failure,['code','message']);requireValue(typeof raw.failure.code==='string'&&typeof raw.failure.message==='string','Invalid extraction failure.');failed=raw.failure;decision=decide({typeIds:pack.typeFile.types.map(type=>type.id),threshold:run.threshold,failures:[raw.failure.code],notes:[]});}
  else{
-  const document=parseUpload(raw);requireValue(!expected.failed&&JSON.stringify(document.tokenCounts)===JSON.stringify(expected.tokenCounts)&&document.needsOutlineRecovery===expected.needsOutlineRecovery,'The document differs from the confirmed cost input.');verifyUploadTokens(document,pack);extractor=document.extractorVersion;extraction=JSON.stringify({extractorVersion:document.extractorVersion,parserVersions:document.parserVersions,needsOutlineRecovery:document.needsOutlineRecovery});key=await store.put(run.id,document.fingerprint,'input',document,true);
+  const document=parseUpload(raw);requireValue(!expected.failed&&JSON.stringify(document.tokenCounts)===JSON.stringify(expected.tokenCounts)&&document.needsOutlineRecovery===expected.needsOutlineRecovery,'The document differs from the confirmed preflight input.');verifyUploadTokens(document,pack);extractor=document.extractorVersion;extraction=JSON.stringify({extractorVersion:document.extractorVersion,parserVersions:document.parserVersions,needsOutlineRecovery:document.needsOutlineRecovery});key=await store.put(run.id,document.fingerprint,'input',document,true);
  }
  await env.DB.prepare("INSERT INTO documents(run_id,fingerprint,tag,original_filename,status,input_key,input_hash,extractor_version,decision_json,failure_json,extraction_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(run.id,raw.fingerprint,`r${run.id.slice(0,8)}-${String(index+1).padStart(4,'0')}`,raw.originalFilename,decision?'complete':'uploaded',key,hash,extractor,decision?JSON.stringify(decision):null,failed?JSON.stringify(failed):null,extraction).run();
  await store.event(run.id,String(raw.fingerprint),'upload','completed',{failed:decision!==null});return response({uploaded:true,idempotent:false},201);
@@ -127,7 +114,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
   if(path==='/api/runs'&&request.method==='POST')return await createRun(request,env,store,actor);
   if(path==='/api/runs'&&request.method==='GET'){
    const rows=(await env.DB.prepare('SELECT * FROM runs WHERE actor=? ORDER BY created_at DESC').bind(actor).all<RunRow>()).results;const runs=[];
-   for(const run of rows){const docs=await store.documents(run.id);runs.push({id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:docs.filter(doc=>doc.status==='complete').length,spendNano:await store.spend(run.id),unaccountedCalls:await store.unaccounted(run.id),textHeld:!!run.text_held,mode:run.mode});}return response({runs});
+   for(const run of rows){const docs=await store.documents(run.id),spend=await store.spendByVendor(run.id);runs.push({id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:docs.filter(doc=>doc.status==='complete').length,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),textHeld:!!run.text_held,mode:run.mode});}return response({runs});
   }
   if(path==='/api/kill'&&request.method==='POST'){
    const raw=await jsonBody(request);requireValue(object(raw),'An explicit switch state is required.');exact(raw,['enabled']);requireValue(typeof raw.enabled==='boolean','An explicit switch state is required.');await env.DB.prepare('UPDATE controls SET kill=? WHERE id=1').bind(raw.enabled?1:0).run();
@@ -135,7 +122,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
   }
   const match=/^\/api\/runs\/([^/]+)(?:\/(.*))?$/.exec(path);if(!match)throw new ServerFailure('E_ROUTE','request','This API route does not exist.',404);
   const run=await authorizeRun(store,match[1],actor),action=match[2];
-  if(!action&&request.method==='GET'){const documents=await store.documents(run.id),events=(await env.DB.prepare('SELECT * FROM events WHERE run_id=? ORDER BY created_at').bind(run.id).all()).results;return response({run:{id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:documents.filter(doc=>doc.status==='complete').length,mode:run.mode,textHeld:!!run.text_held,spendNano:await store.spend(run.id),unaccountedCalls:await store.unaccounted(run.id),threshold:run.threshold},documents:documents.map(doc=>({...doc,decision:doc.decision_json?JSON.parse(doc.decision_json):null})),events});}
+  if(!action&&request.method==='GET'){const documents=await store.documents(run.id),spend=await store.spendByVendor(run.id),events=(await env.DB.prepare('SELECT * FROM events WHERE run_id=? ORDER BY created_at').bind(run.id).all()).results;return response({run:{id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:documents.filter(doc=>doc.status==='complete').length,mode:run.mode,textHeld:!!run.text_held,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),threshold:run.threshold},documents:documents.map(doc=>({...doc,decision:doc.decision_json?JSON.parse(doc.decision_json):null})),events});}
   if(action==='documents'&&request.method==='POST')return await uploadDocument(request,env,store,run);
   if(action==='start'&&request.method==='POST')return await start(env,store,run);
   if(action==='close'&&request.method==='POST'){await store.close(run.id,actor);return response({closed:true});}
