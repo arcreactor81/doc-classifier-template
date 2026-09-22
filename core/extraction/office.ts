@@ -160,6 +160,7 @@ export function parsePptxParts(parts: ReadonlyMap<string, string>): ParsedDocume
     const layoutRel = slideRels.find(rel => attr(rel, 'Type')?.endsWith('/slideLayout'));
     const layoutTarget = layoutRel && attr(layoutRel, 'Target');
     const layout = layoutTarget ? required(parts, resolvePart(path, layoutTarget)) : [];
+    acc.currentHeading = undefined;
     acc.marker(`[Slide ${index + 1}]`);
     function walk(nodes: readonly XmlNode[]): void {
       for (const node of nodes) {

@@ -22,7 +22,7 @@ test('fingerprints use the complete local bytes deterministically', async () => 
   assert.notEqual(one, changed);
 });
 test('unsupported files fail explicitly before parser execution', async () => {
-  await assert.rejects(extractDocument(new File([generated], 'type_a.bin'), {
+  for(const name of ['type_a.bin','type_a.ppt','type_a.PPT'])await assert.rejects(extractDocument(new File([generated], name), {
     pdfWorkerUrl: '/pdf.worker.mjs', parserVersions: { pdf: '1', zip: '1', xml: '1' },
     pdfPolicy: { largeFontRatio: 1.2, maximumHeadingCharacters: 120, topPageFraction: 0.2, gapRatio: 1.5, minimumHeadings: 2 },
   }), { code: 'E_UNSUPPORTED_FORMAT' });

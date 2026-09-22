@@ -154,3 +154,7 @@ Added reproducible acceptance scripts. The builder exercise passed 19 checks usi
 The owner approved a generic clarification to the reader prompt, versioned reader-exact-evidence-v2. Evidence strings must copy exact contiguous source substrings, preserving whitespace, line breaks, punctuation and source quotation marks without added formatting. The strict verbatim validator is unchanged; no output repair, fallback or changed-request retry was added. Confidence and recovery prompts are unchanged. Quotes record the reader prompt version.
 
 The regression verifies JSON-decoded Unicode code points, multiline text, tabs and literal quotation marks, and retains rejection of normalized or rewritten evidence. Holdout validation of this prompt version remains pending; this release claims no model-quality or bake-off result.
+
+
+### PowerPoint structural correction (2026-09-22)
+Extractor1.0.2 resets heading context at slide boundaries; untitled slides cannot inherit prior slide titles. Exacttext, table/notes order and source offsets preserved. Supported formats PDF/DOCX/PPTX now explicit near folder selection; legacyDOC/PPT rejected. Regression red beforefix thenpass; full202test/type/build gate verified in source installation. Livecross-format acceptance remains separate; no accuracy claim.

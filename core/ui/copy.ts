@@ -31,6 +31,7 @@
   outcomes: ['Filed · both systems agree above the threshold', 'Review · a person decides', 'Could not process · the reason is recorded'],
   setup: 'Finish project setup in Git', setupDetail: 'The project type definitions, model pins and verified prices must be committed and deployed before a run can start. This page does not edit project configuration.',
   newLocal: 'Start a new local extraction', localSession: 'Reselect the source folder to resume this local extraction. Previously failed documents remain recorded; use a new extraction to retry.',
+  supportedFormats: 'Supported formats: PDF, Word (.docx), and PowerPoint (.pptx). Older .doc and .ppt files are unsupported.',
   chooseSource: 'Choose source folder', source: 'Source folder', extraction: 'Local extraction', files: 'Files', duration: 'Measured elapsed time', extracted: 'Extracted', failure: 'Could not process',
   alreadyConfirmed: 'This local extraction already has a confirmed run. Resume its upload, or explicitly start a new local extraction for another run.',
   duplicateContent: 'Duplicate document content was found. Review the source folder before creating a run; no file has been silently removed.',

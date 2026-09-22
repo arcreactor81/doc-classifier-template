@@ -62,3 +62,23 @@ test('PPTX relationship IDs remain distinct from numeric slide IDs regardless of
     assert.equal(parsePptxParts(parts).outline.headings[0].text, word(0));
   }
 });
+
+test('PPTX title associations stop at slide boundaries while tables and notes retain order',()=>{
+ const paragraph=(text:string)=>'<a:p><a:r><a:t>'+text+'</a:t></a:r></a:p>';
+ const shape=(text:string,title=false)=>'<p:sp>'+(title?'<p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>':'')+'<p:txBody>'+paragraph(text)+'</p:txBody></p:sp>';
+ const slide=(body:string)=>'<p:sld xmlns:p="urn:p" xmlns:a="urn:a">'+body+'</p:sld>';
+ const parts=new Map([
+ ['ppt/presentation.xml','<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst><p:sldId r:id="a"/><p:sldId r:id="b"/></p:sldIdLst></p:presentation>'],
+ ['ppt/_rels/presentation.xml.rels','<Relationships><Relationship Id="a" Target="slides/one.xml"/><Relationship Id="b" Target="slides/two.xml"/></Relationships>'],
+ ['ppt/slides/one.xml',slide(shape(word(0),true)+shape(word(1)))],
+ ['ppt/slides/two.xml',slide(shape(word(2))+'<a:tbl><a:tr><a:tc><a:txBody>'+paragraph(word(3))+'</a:txBody></a:tc></a:tr><a:tr><a:tc><a:txBody>'+paragraph(word(4))+'</a:txBody></a:tc></a:tr></a:tbl>')],
+ ['ppt/slides/_rels/two.xml.rels','<Relationships><Relationship Id="notes" Type="urn:/notesSlide" Target="../notesSlides/notes.xml"/></Relationships>'],
+ ['ppt/notesSlides/notes.xml',slide(shape(word(5)))],
+ ]);
+ const result=parsePptxParts(parts);
+ assert.equal(result.fullText,['[Slide 1]',word(0),word(1),'[Slide 2]',word(2),word(3),word(4),word(5)].join('\n'));
+ assert.equal(result.outline.blocks[0].headingId,result.outline.headings[0].id);
+ for(const block of result.outline.blocks.slice(1))assert.equal(block.headingId,undefined);
+ assert.deepEqual(result.outline.tables[0].headers,[word(3)]);
+ for(const item of [...result.outline.headings,...result.outline.blocks])assert.equal(result.fullText.slice(item.position,item.position+item.text.length),item.text);
+});
