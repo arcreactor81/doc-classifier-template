@@ -1,6 +1,8 @@
 import { builderCopy as copy } from './copy.ts';
 
+export interface BuilderFailure { code:string; message:string }
 export interface BuilderEntry {
+  failure?: BuilderFailure | null;
   fingerprint: string;
   originalFilename: string;
   tag: string;
@@ -10,7 +12,7 @@ export interface BuilderEntry {
   confidenceCheck: { choice: string; certainty: number; noul: Record<string, number> } | null;
   reader: { typeId: string; isType: boolean; rationale: string; evidence: string[]; closestAlternative: string | null }[] | null;
 }
-export interface BuilderManifest { runId: string; entries: BuilderEntry[] }
+export interface BuilderManifest { runId: string; entries: BuilderEntry[]; notes?: {fingerprint:string;failure?:BuilderFailure|null}[] }
 export interface SourceFile { path: string; fingerprint: string; read(): Promise<Uint8Array> }
 /** Implementations MUST create exclusively: writeNew must reject an existing path, never overwrite it. */
 export interface Destination {
@@ -54,7 +56,8 @@ export function planTree(manifest: BuilderManifest, options: BuildOptions): Buil
       || longest.split('/').some((part) => part.length > options.maxComponentLength)) {
       warnings.push({ tag: entry.tag, path: longest, message: copy.longPath });
     }
-    return { entry, path, sidecarPath };
+    const failure=entry.failure??manifest.notes?.find(note=>note.fingerprint===entry.fingerprint)?.failure;
+    return { entry:failure?{...entry,failure}:entry, path, sidecarPath };
   });
   return { runId: manifest.runId, entries, warnings };
 }
@@ -76,6 +79,7 @@ export function renderSidecar(entry: BuilderEntry): string {
     `# ${copy.sidecarTitle}`, '', `${copy.originalFilename}: ${markdown(entry.originalFilename)}`,
     `${copy.tag}: ${markdown(entry.tag)}`, `${copy.fingerprint}: ${entry.fingerprint}`,
     `${copy.rule}: ${markdown(entry.rule)}`, '', `## ${copy.reasoning}`, '', markdown(entry.reasoningNote),
+    ...(entry.failure ? ['', `## ${copy.failureDetails}`, '', jsonBlock(entry.failure)] : []),
     '', `## ${copy.confidenceCheck}`, '', entry.confidenceCheck === null ? copy.missingVendor : jsonBlock(entry.confidenceCheck),
     '', `## ${copy.reader}`, '', entry.reader === null ? copy.missingVendor : jsonBlock(entry.reader),
     '', `## ${copy.decision}`, '', entry.destinationFolder === 'could_not_process' ? copy.failureDecision : copy.reviewDecision, '',

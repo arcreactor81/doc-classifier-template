@@ -1,3 +1,5 @@
+import {uiCopy} from '../ui/copy.ts';
+import { documentEvidence } from './document-evidence.ts';
 import { workflowInstanceId } from './workflow-identity.ts';
 import { correctionContext } from './correction-context.ts';
 import { requireProject,typeVersion,type ProjectPack } from '../config/project.ts';
@@ -97,11 +99,11 @@ async function corrections(request:Request,env:Env,store:Store,run:RunRow,actor:
  for(const file of raw.files){requireValue(object(file)&&Object.keys(file).every(key=>['folder','filename','tag','fingerprint'].includes(key))&&typeof file.folder==='string'&&typeof file.filename==='string','A correction may contain paths and identities only.');}
  const manifest=await manifestFor(store,run),pack=requireProject(JSON.parse(run.pack_json));const diff=diffCorrection({manifest:manifest.entries,files:raw.files as CorrectionTreeFile[],checkedFolders:raw.checkedFolders as string[],sidecarPaths:raw.sidecarPaths as string[],typeFolders:pack.typeFile.types.map(type=>type.id)});
  const unavailableTags:string[]=[];const evidence:Record<string,ProposalEvidence>={};for(const doc of await store.documents(run.id)){
-  const conf=doc.confidence_key?(await store.json<{value:ConfidenceOutput}>(doc.confidence_key)).value:null;const context=await correctionContext(doc.original_filename,doc.digest_key,{deleted:async key=>{const row=await env.DB.prepare('SELECT deleted_at FROM artifacts WHERE key=?').bind(key).first<{deleted_at:string|null}>();if(!row)throw new ServerFailure('E_ARTIFACT_MISSING','blocker','The document state ledger is missing.');return row.deleted_at!==null;},read:key=>store.json(key)});
+  const conf=doc.confidence_key?(await store.json<{value:ConfidenceOutput}>(doc.confidence_key)).value:null;const context=await correctionContext(doc.original_filename,doc.digest_key,{metadata:async key=>{const row=await env.DB.prepare('SELECT deleted_at,contains_text FROM artifacts WHERE key=? AND run_id=?').bind(key,run.id).first<{deleted_at:string|null;contains_text:number}>();if(!row)throw new ServerFailure('E_ARTIFACT_MISSING','blocker','The document state ledger is missing.');return{deleted:row.deleted_at!==null,containsText:row.contains_text===1};},read:key=>store.json(key),readReader:async key=>(await store.json<{value:ReaderOutput}>(key)).value},doc.reader_key);
   if(context.unavailable)unavailableTags.push(doc.tag);
-  evidence[doc.tag]={certainty:conf?.confidence??null,agreedType:conf&&JSON.parse(doc.decision_json!).ruleId==='R2'?conf.choice:null,title:context.title,digestLines:context.digestLines};
+  evidence[doc.tag]={certainty:conf?.confidence??null,agreedType:conf&&JSON.parse(doc.decision_json!).ruleId==='R2'?conf.choice:null,title:context.title,digestLines:context.digestLines,readerEvidence:context.readerEvidence,fullContextUnavailable:context.fullContextUnavailable};
  }
- const id=crypto.randomUUID();const proposals=proposeCorrections({correctionId:id,currentThreshold:run.threshold,minimumFiledCount:pack.settings.minimumFiledCount,diff,evidence,types:pack.typeFile.types,folderDecisions:(raw.folderDecisions??[]) as FolderDecision[],renderNotFor:(from,to)=>`${from.name}: review the distinction from ${to.name} using the corrected documents.`});
+ const id=crypto.randomUUID();const proposals=proposeCorrections({correctionId:id,typeVersion:run.type_version,currentThreshold:run.threshold,minimumFiledCount:pack.settings.minimumFiledCount,diff,evidence,types:pack.typeFile.types,folderDecisions:(raw.folderDecisions??[]) as FolderDecision[],renderNotFor:(from,to)=>uiCopy.conditionalNotFor(from.name,to.name,to.what!)});
  const proposalContext={unavailableTags,reason:'source_text_not_retained'};
  const rawKey=await store.put(run.id,null,'correction_input',raw),resultKey=await store.put(run.id,null,'correction_analysis',{diff,proposals,proposalContext});
  await env.DB.prepare('INSERT INTO corrections(id,run_id,actor,created_at,raw_key,result_key,proposals_json) VALUES(?,?,?,?,?,?,?)').bind(id,run.id,actor,now(),rawKey,resultKey,JSON.stringify(proposals)).run();return response({correctionId:id,diff,proposals,proposalContext});
@@ -126,6 +128,8 @@ export async function handle(request:Request,env:Env):Promise<Response>{
   const match=/^\/api\/runs\/([^/]+)(?:\/(.*))?$/.exec(path);if(!match)throw new ServerFailure('E_ROUTE','request','This API route does not exist.',404);
   const run=await authorizeRun(store,match[1],actor),action=match[2];
   if(!action&&request.method==='GET'){const documents=await store.documents(run.id),spend=await store.spendByVendor(run.id),events=(await env.DB.prepare('SELECT * FROM events WHERE run_id=? ORDER BY created_at').bind(run.id).all()).results;return response({run:{id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:documents.filter(doc=>doc.status==='complete').length,mode:run.mode,textHeld:!!run.text_held,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),threshold:run.threshold},documents:documents.map(doc=>({...doc,decision:doc.decision_json?JSON.parse(doc.decision_json):null})),events});}
+  const evidence=/^documents\/([^/]+)\/evidence$/.exec(action??'');
+  if(evidence&&request.method==='GET')return response(await documentEvidence(store,run.id,evidence[1],actor));
   if(action==='documents'&&request.method==='POST')return await uploadDocument(request,env,store,run);
   if(action==='start'&&request.method==='POST')return await start(env,store,run);
   if(action==='close'&&request.method==='POST'){await store.close(run.id,actor);return response({closed:true});}

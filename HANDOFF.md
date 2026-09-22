@@ -158,3 +158,11 @@ The regression verifies JSON-decoded Unicode code points, multiline text, tabs a
 
 ### PowerPoint structural correction (2026-09-22)
 Extractor1.0.2 resets heading context at slide boundaries; untitled slides cannot inherit prior slide titles. Exacttext, table/notes order and source offsets preserved. Supported formats PDF/DOCX/PPTX now explicit near folder selection; legacyDOC/PPT rejected. Regression red beforefix thenpass; full202test/type/build gate verified in source installation. Livecross-format acceptance remains separate; no accuracy claim.
+
+## Audited result and correction flows (2026-09-22)
+
+Run tables now show stored outcomes, reasons and priority-one disagreements, rather than treating completed processing as a classification label. Typed API errors expose their recorded headline/action while keeping raw diagnostics separate. Per-document validated vendor evidence loads only on explicit request through an owned-run endpoint; it neither reads source state nor closes the run. Configured document-count mode defaults now populate the selector while preserving user choice.
+
+Failure sidecars retain actual failure details. Correction proposals can include exact retained reader quotes with originating type/verdict and artifact/index provenance, including negative verdicts. Frozen type definitions support conditional exclusion candidates; full-context limitations remain explicit and nothing applies automatically. Full document state is not retained for these proposals. Legacy digest/cost module documentation now identifies active versus historical behavior.
+
+Combined implementation gate passed 220 tests, both TypeScript checks and UI build. Focused acceptance includes typed errors/evidence and proposal browser checks plus local workerd correction persistence. These are implementation checks, not a model-quality or fresh-account deployment claim. Structural-note filing policy remains unchanged.

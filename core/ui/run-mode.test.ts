@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {suggestRunMode} from './run-mode.ts';
+const settings={defaultMode:'interactive' as const,batchCutoff:10};
+test('run mode follows configured default before count and inclusive batch cutoff',()=>{assert.equal(suggestRunMode(settings,null),'interactive');assert.equal(suggestRunMode(settings,9),'interactive');assert.equal(suggestRunMode(settings,10),'batch');assert.equal(suggestRunMode(settings,11),'batch');assert.equal(suggestRunMode({...settings,defaultMode:'batch'},1),'batch');});
+test('explicit choice wins over late settings or count and clearing choice restores suggestion',()=>{assert.equal(suggestRunMode(settings,100,'interactive'),'interactive');assert.equal(suggestRunMode(settings,1,'batch'),'batch');assert.equal(suggestRunMode(settings,100,null),'batch');});
+test('missing settings and invalid counts never become guessed defaults',()=>{assert.throws(()=>suggestRunMode({} as never,null));assert.throws(()=>suggestRunMode(settings,-1));});

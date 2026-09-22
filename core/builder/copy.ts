@@ -20,6 +20,7 @@
   run: 'Run',
   rule: 'Decision rule',
   reasoning: 'Reasoning note',
+  failureDetails: 'Reported failure',
   confidenceCheck: 'Confidence check',
   reader: 'Reader',
   decision: 'What to decide',

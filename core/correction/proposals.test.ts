@@ -106,3 +106,10 @@ test('missing recorded certainty remains invalid for automatic-label threshold e
   const input = fixture(1); input.evidence['r-0'].certainty = null;
   assert.throws(() => proposeCorrections(input), /certainty/i);
 });
+
+test('retained reader evidence and exact definition provenance survive proposals without rewriting inputs',()=>{
+ const input=fixture(1);move(input,0,'type_b',0.91);input.typeVersion='frozen-version';
+ input.types=[{id:'type_a',name:'Type A',what:'Definition A',not_for:'Exclusion A'},{id:'type_b',name:'Type B',what:'Definition B',not_for:'Exclusion B'}];
+ input.evidence['r-0'].readerEvidence=[{typeId:'type_a',isType:false,quote:' exact\n quote ',verdictIndex:0,quoteIndex:0,artifactKey:'retained-reader'}];input.evidence['r-0'].fullContextUnavailable=true;
+ const before=JSON.stringify(input),result=proposeCorrections(input);assert.deepEqual(result.examples[0].readerEvidence,input.evidence['r-0'].readerEvidence);assert.equal(result.examples[0].fullContextUnavailable,true);assert.deepEqual(result.notFor[0].definitions,{from:input.types[0],to:input.types[1]});assert.equal(result.notFor[0].typeVersion,'frozen-version');assert.equal(JSON.stringify(input),before);
+});

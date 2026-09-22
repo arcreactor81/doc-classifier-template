@@ -1,3 +1,9 @@
+# Current and legacy document state
+
+The active pipeline uses buildStructuredState in structured-state.ts with policy untrimmed-structured-state-v2: full extracted text and outline, no local token counter and no 6,000-token trimming. Response usage supplies token counts. Full-state artifacts contain source text and are deleted on user closure. The budgeted digest API described below is retained for historical compatibility and tests; it is not a current readiness dependency. Verbatim heading verification remains active.
+
+## Historical helper reference
+
 ﻿# Digest policy and integration
 
 `buildDigest(input, { budget, vocabulary, policy, codec })` returns the exact serialized named-field state, its token count, notes, and a separate selection log. `DIGEST_POLICY_VERSION` is `named-fields-json-v1`. A project pack must explicitly record this version, tokenizer ID, acceptedBy and acceptedAt. There is no runtime tokenizer fallback. The injected codec must use the selected tokenizer and return the longest literal prefix accepted by the whole-state budget predicate. Character counting in tests is exclusively a test codec.

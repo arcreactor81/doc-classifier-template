@@ -1,10 +1,13 @@
 import type { CorrectionDiff, CorrectionMatch, CorrectionMove, CorrectionTreeFile } from './diff.ts';
 
-export interface ProposalEvidence { certainty: number | null; agreedType: string | null; title: string; digestLines: readonly string[] }
-export interface ProposalType { id: string; name: string }
+export interface ReaderEvidence {typeId:string;isType:boolean;quote:string;verdictIndex:number;quoteIndex:number;artifactKey:string}
+export interface ProposalEvidence { readerEvidence?:readonly ReaderEvidence[];fullContextUnavailable?:boolean; certainty: number | null; agreedType: string | null; title: string; digestLines: readonly string[] }
+export interface ProposalType { id: string; name: string;what?:string;not_for?:string }
+export interface ProposalDefinition {id:string;name:string;what:string;not_for:string}
 export interface FolderDecision { folder: string; action: 'ignore' | 'new_type' }
 export interface ProposalInput {
   correctionId: string;
+  typeVersion?:string;
   currentThreshold: number;
   minimumFiledCount: number;
   diff: CorrectionDiff;
@@ -14,7 +17,7 @@ export interface ProposalInput {
   /** UI copy is supplied centrally; this module never invents distinguishing content. */
   renderNotFor(from: ProposalType, to: ProposalType): string;
 }
-export interface ExampleCandidate { tag: string | null; title: string; digestLines: string[] }
+export interface ExampleCandidate { readerEvidence?:ReaderEvidence[];fullContextUnavailable?:boolean;tag: string | null; title: string; digestLines: string[] }
 export interface ThresholdProposal {
   correctionId: string;
   direction: 'raise' | 'lower';
@@ -26,7 +29,7 @@ export interface CorrectionProposals {
   raise: (ThresholdProposal & { wrongSentToReview: number; correctSentToReview: number }) | null;
   lower: (ThresholdProposal & { additionalAutomaticLabels: number; observedErrors: number }) | null;
   examples: (ExampleCandidate & { typeId: string })[];
-  notFor: { fromType: string; toType: string; candidate: string; evidenceTags: string[] }[];
+  notFor: { definitions?:{from:ProposalDefinition;to:ProposalDefinition};typeVersion?:string;fromType: string; toType: string; candidate: string; evidenceTags: string[] }[];
   newTypes: { folder: string; id: string | null; name: string; what: ''; not_for: ''; examples: ExampleCandidate[]; status: 'proposed_type_not_yet_defined' }[];
   unresolvedFolders: string[];
   unmatched: CorrectionTreeFile[];
@@ -63,7 +66,7 @@ export function proposeCorrections(input: ProposalInput): CorrectionProposals {
   };
   const example = (match: CorrectionMatch): ExampleCandidate => {
     const value = evidence(match);
-    return { tag: match.entry.tag, title: value.title, digestLines: [...value.digestLines] };
+    return { tag: match.entry.tag, title: value.title, digestLines: [...value.digestLines],...(value.readerEvidence?{readerEvidence:value.readerEvidence.map(item=>({...item}))}:{}),...(value.fullContextUnavailable!==undefined?{fullContextUnavailable:value.fullContextUnavailable}:{}) };
   };
   const included = (folder: string) => !unknown.has(folder) || decisions.get(folder) === 'new_type';
   const moves = input.diff.moves.filter(move => included(move.to));
@@ -128,7 +131,9 @@ export function proposeCorrections(input: ProposalInput): CorrectionProposals {
     pairs.set(key, pair);
   }
   result.notFor = [...pairs.values()].map(pair => ({ fromType: pair.from.id, toType: pair.to.id,
-    candidate: input.renderNotFor({ ...pair.from }, { ...pair.to }), evidenceTags: [...pair.tags] }));
+    candidate: input.renderNotFor({ ...pair.from }, { ...pair.to }), evidenceTags: [...pair.tags],
+    ...(input.typeVersion?{typeVersion:input.typeVersion}:{}),
+    ...([pair.from,pair.to].every(type=>typeof type.what==='string'&&typeof type.not_for==='string')?{definitions:{from:{id:pair.from.id,name:pair.from.name,what:pair.from.what!,not_for:pair.from.not_for!},to:{id:pair.to.id,name:pair.to.name,what:pair.to.what!,not_for:pair.to.not_for!}}}:{}) }));
   const proposedFolders = input.diff.unknownFolders.filter(item => decisions.get(item.folder) === 'new_type');
   const ids = proposedFolders.map(item => proposedId(item.folder));
   const reservedIds = new Set(['none_of_these', 'human_review', 'could_not_process']);

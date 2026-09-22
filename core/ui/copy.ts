@@ -1,4 +1,12 @@
 ﻿export const uiCopy = {
+  conditionalNotFor: (fromName:string,toName:string,toWhat:string) => 'Do not use "'+fromName+'" when "'+toName+'" is the closer fit under this definition: "'+toWhat+'".',
+  proposalRetainedReader: 'Retained reader evidence', proposalReaderVerdict: 'Reader verdict', proposalQuoteProvenance: 'Quote provenance', proposalFrozenDefinitions: 'Frozen type definitions', proposalTypeVersion: 'Type version',
+  proposalPartialContext: 'Full document context is unavailable here. Retained reader quotes are only partial evidence; review the original document before accepting an example.',
+
+  evidenceOpen:'View recorded evidence', evidenceReload:'Refresh recorded evidence', evidenceConfidence:'Confidence check', evidenceReader:'Reader', evidenceChoice:'Selected type', evidenceCertainty:'Certainty', evidenceType:'Type', evidenceProbability:'Choice probability', evidenceNoul:'Independent yes/no probability', evidenceRationale:'Reason', evidenceQuotes:'Exact source quotes', evidenceAlternative:'Closest alternative', evidenceNone:'None', evidenceNoQuotes:'No evidence quotes were returned.', evidenceMissing:'No validated output has been recorded for this stage.', evidenceMismatch:'The evidence response does not match the selected document.',
+  unrecognizedApiError: 'The server returned an unrecognized error response.',
+  resultFiled:'Filed', resultReview:'Review', resultFailed:'Could not process', resultPriority:'Review first', resultPending:'Processing', resultUploaded:'Uploaded', resultQueued:'Queued', resultUnavailable:'Outcome unavailable', resultDetailsUnavailable:'Recorded details are unavailable.', resultDestination:'Destination', resultPriorityHeader:'Priority', resultRule:'Rule',
+  resultReasons: { stage_failed: 'A processing stage could not finish. Review the recorded failure before retrying in a new run.', document_notes: 'The document needs a person to review its recorded notes.', agreement_at_threshold: 'Both systems agree at or above the run threshold.', low_certainty: 'Both systems agree, but certainty is below the run threshold.', straddles_types: 'The reader found more than one matching type.', possible_new_type: 'Neither system found a matching type. Consider whether a new type is needed.', systems_disagree: 'The two systems disagree. Review this document first.' },
   proposalReview: 'Proposals for Git review', proposalReviewHelp: 'Review these suggestions against the original documents. Accept or reject them in your project pack in Git, then deploy. Downloading does not change the taxonomy or threshold.',
   proposedExamples: 'Proposed examples', proposedExclusions: 'Proposed exclusions', proposedTypes: 'Proposed types', proposalDownload: 'Download proposals JSON',
   proposalType: 'Type', proposalEvidence: 'Evidence tags', proposalIdentifier: 'Suggested identifier', proposalIdentifierMissing: 'Choose an identifier in Git.',
@@ -12,7 +20,7 @@
   currentThreshold: 'Current threshold', thresholdJustification: 'Threshold justification', vendorStatus: 'Vendor status',
   healthUnavailable: 'Unavailable', vendorNotContacted: 'No inference calls have been recorded.',
 
-  proposalContextUnavailable: 'Text excerpts are unavailable for some proposed examples. Review the original documents before accepting examples.',
+  proposalContextUnavailable: 'Full document context is unavailable for some proposed examples. Any retained reader quotes are partial evidence. Review the original documents before accepting examples.',
   invalidTokenCount: 'A recorded token count is invalid. Stop this run and ask the technical contact to check the usage record.',
   invalidProjectCopy: 'Project copy contains a missing value, unknown or protected key, HTML, or prohibited wording. Correct the project pack in Git.',
   budgetTitle: 'Spending limits for this run', budgetMode: 'Budget choice', budgetLimited: 'Set spending limits', budgetUnlimited: 'Run without spending limits',

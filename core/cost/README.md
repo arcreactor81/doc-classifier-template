@@ -1,3 +1,9 @@
+# Current monitored run spending
+
+The active pipeline uses run-budget.ts: each run records blended/OpenAI/TypeSafe limits or explicit unlimited acknowledgement. Spending comes from validated response usage via actualUsageCost; any reached limit stops new calls, while outstanding charges may exceed it. Unknown usage is not zero. The estimateRunCost, authorizeBudget and checkLiveBudget APIs described below are legacy helpers, not the current run-creation gate; their strict-above ceiling semantics do not replace the active at-or-above monitored stop rule.
+
+## Historical helper reference
+
 ﻿
 # Cost policy
 

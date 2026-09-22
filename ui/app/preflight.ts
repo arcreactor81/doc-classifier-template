@@ -1,3 +1,4 @@
+import { suggestRunMode,type RunMode,type ModeSettings } from '../../core/ui/run-mode.ts';
 ﻿import { activeUiCopy as c } from '../../core/ui/project-copy.ts';
 import { prepareLocalRun } from '../../core/local/preflight.ts';
 import { requireProject, typeVersion } from '../../core/config/project.ts';
@@ -11,6 +12,8 @@ interface Options { ready: boolean; request<T>(path: string, body?: unknown): Pr
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] => { const node = document.createElement(tag); if (text) node.textContent = text; return node; };
 /** Controls only: requests run solely after an explicit user click and successful verified preflight. */
 export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, options: Options): void {
+  let modeSettings:ModeSettings|null=null, selectedCount:number|null=null, userMode:RunMode|null=null, selectionEpoch=0;
+  mode.value='';
   let quote: LocalEstimate | null = null, quotedLocalId = '', quotedDocuments = '', quotedPack = '', quotedType = '', busy = false;
   const output = element('div'), notice = element('p', c.uploadUnavailable);
   const budgetBox=element('fieldset');budgetBox.className='budget-controls';budgetBox.append(element('legend',c.budgetTitle));
@@ -65,6 +68,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
   }
   async function refreshLocalEstimate(localId:string):Promise<void>{
     quote=null;const {items,pack}=await prepared(localId),documents=items.map(item=>item.quote);
+    modeSettings=pack.settings;selectedCount=documents.length;mode.value=suggestRunMode(modeSettings,selectedCount,userMode);
     quote=estimatePreparedRun(documents,pack,mode.value as 'interactive'|'batch');quotedLocalId=localId;quotedDocuments=JSON.stringify(documents);quotedPack=JSON.stringify(pack);quotedType=await typeVersion(JSON.stringify(pack.typeFile));displayEstimate(quote);
   }
   const estimate=action(c.quoteAction,async()=>{
@@ -97,9 +101,12 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
     notice.hidden = !!quote;
   }
   function invalidate(): void { quote = null; quotedLocalId = ''; quotedDocuments = ''; quotedPack = ''; quotedType = ''; acknowledge.checked = false; output.replaceChildren(); update(); }
-  mode.addEventListener('change', invalidate);budgetMode.addEventListener('change',()=>{acknowledge.checked=false;update();});acknowledge.addEventListener('change',update);for(const input of Object.values(inputs))input.addEventListener('input',update);
-  const changed = () => { if (!host.isConnected) { window.removeEventListener('local-extraction-changed', changed); return; } invalidate(); };
+  mode.addEventListener('change',()=>{userMode=mode.value as RunMode;invalidate();});budgetMode.addEventListener('change',()=>{acknowledge.checked=false;update();});acknowledge.addEventListener('change',update);for(const input of Object.values(inputs))input.addEventListener('input',update);
+  const changed = () => { if (!host.isConnected) { window.removeEventListener('local-extraction-changed', changed); return; } selectionEpoch++;userMode=null;selectedCount=null;if(modeSettings)mode.value=suggestRunMode(modeSettings,null);invalidate(); };
   window.addEventListener('local-extraction-changed', changed);
+  const counted=(event:Event)=>{if(!host.isConnected){window.removeEventListener('local-extraction-count',counted);return;}selectedCount=(event as CustomEvent<number>).detail;if(modeSettings)mode.value=suggestRunMode(modeSettings,selectedCount,userMode);invalidate();};
+  window.addEventListener('local-extraction-count',counted);
   const actions = element('div'); actions.className = 'actions'; actions.append(estimate, confirm, resume);
   host.append(output, budgetBox, notice, actions); update();
+  const initialEpoch=selectionEpoch;void options.request('/api/project').then(raw=>{const pack=requireProject(raw);modeSettings=pack.settings;if(initialEpoch===selectionEpoch)mode.value=suggestRunMode(modeSettings,selectedCount,userMode);else if(!userMode)mode.value=suggestRunMode(modeSettings,selectedCount);}).catch(options.onError);
 }

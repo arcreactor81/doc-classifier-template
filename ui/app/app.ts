@@ -1,8 +1,11 @@
+import type { ConfidenceOutput, ReaderOutput } from '../../core/vendors/validate.ts';
+import { parseRequestFailure, errorPresentation } from '../../core/ui/request-error.ts';
+import { presentRunDocuments } from '../../core/ui/run-results.ts';
 ﻿import './style.css';
 import { formatNanodollars, type SpendKey } from '../../core/ui/run-budget.ts';
 import { attachRunPreflight } from './preflight.ts';
 import { browserSupported } from '../../core/extraction/policy.ts';
-import type { CorrectionProposals, FolderDecision } from '../../core/correction/proposals.ts';
+import type { CorrectionProposals, FolderDecision, ExampleCandidate } from '../../core/correction/proposals.ts';
 import type { CorrectionDiff } from '../../core/correction/diff.ts';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { ExtractionPool } from '../../core/extraction/pool.ts';
@@ -27,8 +30,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: 
 function button(label: string, action: () => Promise<void> | void, primary = false): HTMLButtonElement { const node = el('button', label, primary ? 'primary' : ''); node.type = 'button'; node.onclick = () => { node.disabled = true; Promise.resolve().then(action).catch(error=>{if(!(error instanceof DOMException && error.name==='AbortError'))showError(error);}).finally(() => { if (node.isConnected) node.disabled = false; }); }; return node; }
 function section(title: string, description?: string): HTMLElement { const box = el('section', undefined, 'card'); box.append(el('h2', title)); if (description) box.append(el('p', description, 'muted')); return box; }
 function technical(value: unknown, label: string = c.details): HTMLDetailsElement { const d = el('details'); d.append(el('summary', label), el('pre', typeof value === 'string' ? value : JSON.stringify(value, null, 2))); return d; }
-function showError(error: unknown): void { const host = document.querySelector('main'); if (!host) return; const box = section(c.error, c.errorAction); box.classList.add('error'); box.setAttribute('role', 'alert'); box.append(technical(error instanceof Error ? { ...error, message: error.message } : error)); host.prepend(box); }
-async function api<T = Json>(path: string, body?: unknown): Promise<T> { const response = await fetch(path, body === undefined ? { credentials: 'same-origin' } : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw Object.assign(new Error(c.requestFailed), { status: response.status, response: await response.text() }); return await response.json() as T; }
+function showError(error: unknown): void { const host = document.querySelector('main'); if (!host) return; const presentation=errorPresentation(error);const box = section(presentation.headline, presentation.action); box.classList.add('error'); box.setAttribute('role', 'alert'); box.append(technical(presentation.technical)); host.prepend(box); }
+async function api<T = Json>(path: string, body?: unknown): Promise<T> { const response = await fetch(path, body === undefined ? { credentials: 'same-origin' } : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw parseRequestFailure(response.status,await response.text()); return await response.json() as T; }
 function field(container: HTMLElement, label: string, type = 'text', value = ''): HTMLInputElement { const id = crypto.randomUUID(); const text = el('label', label); text.htmlFor = id; const input = el('input'); input.id = id; input.type = type; input.value = value; container.append(text, input); return input; }
 function stat(container: HTMLElement, label: string, value: string): void { const node = el('div', undefined, 'stat'); node.append(el('strong', value), el('span', label)); container.append(node); }
 function table(headers: string[], rows: string[][]): HTMLElement { const wrap = el('div', undefined, 'scroll'); const t = el('table'); const head = el('thead'); const tr = el('tr'); headers.forEach(label => { const th = el('th', label); th.scope = 'col'; tr.append(th); }); head.append(tr); t.append(head); const body = el('tbody'); rows.forEach(row => { const item = el('tr'); row.forEach(value => item.append(el('td', value))); body.append(item); }); t.append(body); wrap.append(t); return wrap; }
@@ -54,6 +57,7 @@ async function home(main: HTMLElement): Promise<void> {
       const scanned=await scanSourceFolder(folder,{onProgress:count=>{progress.textContent=c.files+': '+count;}});const previous=await store.list(localRunId);const retry=readRetrySession(localStorage,localRunId);let sources=scanned;const retryNames=new Map<string,string>();
       if(retry){const matching=matchRetrySources(retry,scanned);sources=matching.matched.map(item=>item.source);for(const item of matching.matched)retryNames.set(item.document.fingerprint,item.document.originalFilename);localStorage.setItem('retry-missing:'+localRunId,JSON.stringify(matching.missing.map(item=>item.fingerprint)));output.append(table([c.source,c.status],[...matching.missing.map(item=>[item.originalFilename,c.missingRetry]),...matching.excluded.map(item=>[item.path,c.excludedRetry])]));}
       else{const selectedPaths=new Set(sources.map(source=>source.path));if(previous.some(record=>!selectedPaths.has(record.sourcePath)))throw new Error(c.sourceSetChanged);}
+      window.dispatchEvent(new CustomEvent('local-extraction-count',{detail:sources.length}));
       const previousByFingerprint=new Map(previous.map(record=>[record.fingerprint,record]));let completed=0;
       const rows:string[][]=[];
       const extractionResults=await Promise.allSettled(sources.map(async source=>{
@@ -80,6 +84,24 @@ async function home(main: HTMLElement): Promise<void> {
   const currentLocal=localStorage.getItem('local-extraction-run');const retry=currentLocal?readRetrySession(localStorage,currentLocal):null;if(retry){const provenance=el('p',c.retryParent+': ');const link=el('a',retry.parentRunId);link.href='#runs/'+encodeURIComponent(retry.parentRunId);provenance.append(link);work.prepend(provenance);}
   if(pendingRetryFolder){const selected=pendingRetryFolder;pendingRetryFolder=null;await extractChosen(selected);}
 }
+interface RecordedEvidence {runId:string;fingerprint:string;decision:unknown;failure:unknown;notes:string[];confidence:ConfidenceOutput|null;reader:ReaderOutput|null}
+const evidenceCache=new Map<string,RecordedEvidence>(),openEvidence=new Set<string>();
+function evidenceDisclosure(runId:string,fingerprint:string):HTMLDetailsElement {
+ const key=runId+'/'+fingerprint,disclosure=el('details'),content=el('div');disclosure.append(el('summary',c.evidenceOpen),content);let busy=false;
+ function display(value:RecordedEvidence):void{
+  content.replaceChildren();const confidence=section(c.evidenceConfidence);
+  if(value.confidence){const result=value.confidence;confidence.append(el('p',c.evidenceChoice+': '+result.choice),el('p',c.evidenceCertainty+': '+result.confidence),table([c.evidenceType,c.evidenceProbability,c.evidenceNoul],Object.entries(result.probabilities).map(([type,probability])=>[type,String(probability),Object.hasOwn(result.nouls,type)?String(result.nouls[type]):c.evidenceNone])));}
+  else confidence.append(el('p',c.evidenceMissing));
+  const reader=section(c.evidenceReader);
+  if(value.reader)for(const verdict of value.reader.verdicts){const item=section(verdict.type_id);item.append(el('p',c.evidenceReader+': '+(verdict.is_type?c.yes:c.no)),el('p',c.evidenceRationale+': '+verdict.rationale),el('p',c.evidenceAlternative+': '+(verdict.closest_alternative??c.evidenceNone)),el('h3',c.evidenceQuotes));if(!verdict.evidence.length)item.append(el('p',c.evidenceNoQuotes));for(const quote of verdict.evidence)item.append(el('pre',quote));reader.append(item);}
+  else reader.append(el('p',c.evidenceMissing));
+  content.append(confidence,reader,technical(value),button(c.evidenceReload,load));
+ }
+ async function load():Promise<void>{if(busy)return;busy=true;content.replaceChildren(el('p',c.loading));try{const value=await api<RecordedEvidence>('/api/runs/'+encodeURIComponent(runId)+'/documents/'+encodeURIComponent(fingerprint)+'/evidence');if(value.runId!==runId||value.fingerprint!==fingerprint)throw new Error(c.evidenceMismatch);evidenceCache.set(key,value);display(value);}catch(error){content.replaceChildren(button(c.evidenceReload,load));showError(error);}finally{busy=false;}}
+ disclosure.ontoggle=()=>{if(disclosure.open){openEvidence.add(key);const cached=evidenceCache.get(key);if(cached)display(cached);else void load();}else openEvidence.delete(key);};
+ if(openEvidence.has(key)){const cached=evidenceCache.get(key);if(cached){display(cached);disclosure.open=true;}}
+ return disclosure;
+}
 async function runs(main: HTMLElement, generation: number): Promise<void> {
   intro(main,c.runs,c.runsLede);
   if (!activeRun) { const data = await api<{ runs: Json[] }>('/api/runs'); if (generation !== renderId) return; if (!data.runs.length) main.append(el('p',c.noRuns,'empty')); for (const run of data.runs) { const box = section(String(run.id)); const stats = el('div',undefined,'stats'); stat(stats,c.status,String(run.status)); stat(stats,c.progress,`${run.completed} / ${run.total}`); if(Number(run.unaccountedCalls)>0)box.append(el('p',c.unaccountedSpend+': '+run.unaccountedCalls));box.append(stats,button(c.nav.runs,()=>route('runs',String(run.id)))); main.append(box); } return; }
@@ -90,10 +112,10 @@ async function runs(main: HTMLElement, generation: number): Promise<void> {
   spendBox.append(table([c.spend,c.knownSpend,c.spendLimit],([['blended',c.budgetBlended],['openai',c.budgetOpenai],['typesafe',c.budgetTypesafe]] as const).map(([key,label])=>[label,typeof spend?.[key]==='string'?formatNanodollars(spend[key]!):c.spendUnavailable,budget?.mode==='unlimited'?c.noSpendingLimits:budget?.limits?.[key]===null?c.noCategoryLimit:typeof budget?.limits?.[key]==='string'?formatNanodollars(budget.limits[key]!):c.spendUnavailable])));
   if(Number(run.pendingAccounting)>0)spendBox.append(el('p',c.pendingAccounting+': '+run.pendingAccounting));
   if(Number(run.unaccountedCalls)>0){const unknown=el('p',c.unaccountedSpend+': '+run.unaccountedCalls);unknown.setAttribute('role','alert');spendBox.append(unknown);}box.append(spendBox); const progress = el('progress'); progress.max = Number(run.total) || 1; progress.value = Number(run.completed) || 0; progress.setAttribute('aria-label',c.progress); box.append(progress,el('p',run.textHeld ? c.textHeld : c.textDeleted,'muted'));
-  const actions = el('div',undefined,'actions'); const download = button(c.download,async()=>{ const response = await fetch(`/api/runs/${encodeURIComponent(activeRun)}/manifest`); if(!response.ok)throw new Error(await response.text()); const blob = await response.blob(); const url=URL.createObjectURL(blob); const a=el('a'); a.href=url; a.download=`manifest-${activeRun}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); await render(); },true); download.disabled = Number(run.completed)!==Number(run.total) || !Number(run.total); download.title=download.disabled?c.noManifest:''; actions.append(download,button(c.close,async()=>{await api(`/api/runs/${encodeURIComponent(activeRun)}/close`,{});await render();}),button(c.kill,async()=>{await api('/api/kill',{enabled:true});await render();})); box.append(actions,el('p',c.killDetail,'muted')); main.append(box);
+  const actions = el('div',undefined,'actions'); const download = button(c.download,async()=>{ const response = await fetch(`/api/runs/${encodeURIComponent(activeRun)}/manifest`); if(!response.ok)throw parseRequestFailure(response.status,await response.text()); const blob = await response.blob(); const url=URL.createObjectURL(blob); const a=el('a'); a.href=url; a.download=`manifest-${activeRun}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); await render(); },true); download.disabled = Number(run.completed)!==Number(run.total) || !Number(run.total); download.title=download.disabled?c.noManifest:''; actions.append(download,button(c.close,async()=>{await api(`/api/runs/${encodeURIComponent(activeRun)}/close`,{});await render();}),button(c.kill,async()=>{await api('/api/kill',{enabled:true});await render();})); box.append(actions,el('p',c.killDetail,'muted')); main.append(box);
   const retryDocuments:RetryDocument[]=data.documents.filter(item=>{const decision=item.decision as {ruleId?:string;outcome?:string}|null;return decision?.ruleId==='R0'&&decision.outcome==='could_not_process';}).map(item=>({fingerprint:String(item.fingerprint),originalFilename:String(item.originalFilename??item.original_filename)}));
   if(retryDocuments.length){const retryBox=section(c.retryFailed,c.retryDetail);retryBox.append(table([c.source],retryDocuments.map(item=>[item.originalFilename])),button(c.retryFailed,async()=>{if(!supported)throw new Error(c.browserReason);if(poll)clearTimeout(poll);const parentId=activeRun;const folder=await pickDirectory();const retry=createRetrySession(parentId,retryDocuments,new Date().toISOString(),crypto.randomUUID());localStorage.setItem('retry-session:'+retry.runId,JSON.stringify(retry));localStorage.setItem('local-extraction-run',retry.runId);pendingRetryFolder=folder;route('home');}));main.append(retryBox);}
-  const docs=section(c.documents); docs.append(table([c.source,c.status,c.details],data.documents.map(d=>[String(d.originalFilename??d.filename??d.fingerprint),String(d.status??d.rule),String(d.reasoningNote??d.reason??'')]))); main.append(docs,technical(data.events,c.events));
+  const docs=section(c.documents), rows=presentRunDocuments(data.documents,c); const results=table([c.source,c.status,c.resultPriorityHeader,c.resultRule,c.resultDestination,c.details],rows.map(row=>[row.filename,row.outcome,row.priority,row.rule,row.destination,row.reason])); results.querySelectorAll('tbody tr').forEach((tr,index)=>{const tone=rows[index].tone;if(tone)tr.children[1].classList.add('outcome',tone);if(rows[index].fingerprint)tr.children[5].append(evidenceDisclosure(activeRun,rows[index].fingerprint));}); docs.append(results); main.append(docs,technical(data.events,c.events));
   if(Number(run.pendingAccounting)>0||!['closed','complete','halted','failed'].includes(String(run.status)))poll=setTimeout(()=>void render(),5000);
 }
 async function build(main: HTMLElement): Promise<void> {
@@ -152,16 +174,18 @@ async function correct(main: HTMLElement): Promise<void> {
     if(proposals.unresolvedFolders.length)output.append(button(c.analyze,submitCorrection));
     const review=section(c.proposalReview,c.proposalReviewHelp);
     review.append(button(c.proposalDownload,()=>{const url=URL.createObjectURL(new Blob([JSON.stringify({runId:submittedRun,...result},null,2)],{type:'application/json'}));const link=el('a');link.href=url;link.download='correction-proposals-'+result.correctionId+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
-    function exampleCard(candidate:{title:string;tag:string|null;digestLines:readonly string[]}):HTMLElement{
+    function exampleCard(candidate:ExampleCandidate):HTMLElement{
       const card=el('article',undefined,'card');card.append(el('h4',candidate.title));
       if(candidate.tag)card.append(el('p',c.proposalEvidence+': '+candidate.tag));
-      if(candidate.digestLines.length){for(const line of candidate.digestLines)card.append(el('blockquote',line));}
-      else card.append(el('p',c.proposalNoExcerpt,'muted'));return card;
+      if(candidate.digestLines.length){for(const line of candidate.digestLines)card.append(el('pre',line));}
+      if(candidate.readerEvidence?.length){card.append(el('h5',c.proposalRetainedReader));for(const evidence of candidate.readerEvidence){const item=el('div');item.append(el('p',c.proposalType+': '+evidence.typeId),el('p',c.proposalReaderVerdict+': '+(evidence.isType?c.yes:c.no)),el('pre',evidence.quote),technical({artifactKey:evidence.artifactKey,verdictIndex:evidence.verdictIndex,quoteIndex:evidence.quoteIndex},c.proposalQuoteProvenance));card.append(item);}}
+      if(!candidate.digestLines.length&&!candidate.readerEvidence?.length)card.append(el('p',c.proposalNoExcerpt,'muted'));
+      if(candidate.fullContextUnavailable)card.append(el('p',c.proposalPartialContext,'muted'));return card;
     }
     review.append(el('h3',c.proposedExamples));if(!proposals.examples.length)review.append(el('p',c.proposalNoExamples));
     for(const candidate of proposals.examples){const card=exampleCard(candidate);card.prepend(el('p',c.proposalType+': '+candidate.typeId));review.append(card);}
     review.append(el('h3',c.proposedExclusions));if(!proposals.notFor.length)review.append(el('p',c.proposalNoExclusions));
-    for(const candidate of proposals.notFor){const card=el('article',undefined,'card');card.append(el('h4',candidate.fromType+' ? '+candidate.toType),el('p',candidate.candidate),el('p',c.proposalEvidence+': '+candidate.evidenceTags.join(', ')));review.append(card);}
+    for(const candidate of proposals.notFor){const card=el('article',undefined,'card');card.append(el('h4',candidate.fromType+' ? '+candidate.toType),el('p',candidate.candidate),el('p',c.proposalEvidence+': '+candidate.evidenceTags.join(', ')));if(candidate.typeVersion)card.append(el('p',c.proposalTypeVersion+': '+candidate.typeVersion));if(candidate.definitions)card.append(technical(candidate.definitions,c.proposalFrozenDefinitions));review.append(card);}
     review.append(el('h3',c.proposedTypes));if(!proposals.newTypes.length)review.append(el('p',c.proposalNoTypes));
     for(const candidate of proposals.newTypes){const card=el('article',undefined,'card');card.append(el('h4',candidate.name),el('p',candidate.id?c.proposalIdentifier+': '+candidate.id:c.proposalIdentifierMissing),el('p',c.proposalIncompleteType));for(const example of candidate.examples)card.append(exampleCard(example));review.append(card);}
     output.append(review,technical(result));

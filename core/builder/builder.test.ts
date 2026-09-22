@@ -100,3 +100,14 @@ test('cancellation lists every unattempted document and preserves an incomplete 
   assert.equal(result.entries[0].status, 'cancelled'); assert.equal(result.complete, false);
   assert.equal(f.files.size, 1);
 });
+
+
+test('failure sidecars retain manifest failure details without changing source decisions',async()=>{
+ const f=await fixture('could_not_process');
+ const failure={code:'E_READER_SCHEMA',message:'Exact evidence validation failed.'};
+ const manifest={...f.manifest,notes:[{fingerprint:f.manifest.entries[0].fingerprint,notes:[],failure}]};
+ const before=JSON.stringify(manifest);const plan=planTree(manifest,options);
+ await buildTree(plan,f.sources,f.destination);
+ const note=new TextDecoder().decode(f.files.get('could_not_process/r1-0001--document.bin.md'));
+ assert.ok(note.includes(failure.code));assert.ok(note.includes(failure.message));assert.equal(JSON.stringify(manifest),before);
+});

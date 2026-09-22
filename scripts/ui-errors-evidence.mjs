@@ -1,0 +1,17 @@
+﻿import {chromium} from '@playwright/test';import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'msedge',headless:true});
+try{
+ const page=await browser.newPage(),calls=[];const fingerprint='a'.repeat(64);let errorMode=false,unknown=false;
+ await page.route('**/api/**',route=>{const request=route.request();calls.push({path:new URL(request.url()).pathname,method:request.method()});
+  if(request.url().endsWith('/api/health'))return route.fulfill({json:{status:'NOT READY',blockers:[],versions:{},project:{},modelCallsEnabled:false,textHeldRuns:0}});
+  if(request.url().endsWith('/evidence'))return route.fulfill({json:{runId:'test',fingerprint,decision:{ruleId:'R5'},failure:null,notes:[],confidence:null,reader:{model:'gpt-5.6-terra',verdicts:[{type_id:'type_a',is_type:true,rationale:'<b>Reason</b>',evidence:['First\nSecond\tline'],closest_alternative:null}]}}});
+  if(errorMode)return unknown?route.fulfill({status:502,body:'<html>Proxy failure</html>'}):route.fulfill({status:409,json:{error:{code:'E_RUN_STOPPED',headline:'The run stopped.',action:'Review this run before continuing.',details:{requestId:'req-fixture'}}}});
+  return route.fulfill({json:{run:{status:'complete',total:1,completed:1,spend:{blended:'0',openai:'0',typesafe:'0'},budget:{mode:'limited',limits:{blended:'1000000000',openai:null,typesafe:null}},textHeld:true},documents:[{fingerprint,original_filename:'document.pdf',status:'complete',decision:{ruleId:'R5',reasonCode:'systems_disagree',destinationFolder:'human_review',notes:[],failures:[]}}],events:[]}});
+ });
+ await page.goto('http://127.0.0.1:5173/#runs/test');await page.getByText('View recorded evidence',{exact:true}).waitFor();assert.equal(calls.some(c=>c.path.endsWith('/evidence')),false);
+ await page.getByText('View recorded evidence',{exact:true}).click();await page.getByText('No validated output has been recorded for this stage.',{exact:true}).waitFor();assert.equal(calls.filter(c=>c.path.endsWith('/evidence')).length,1);assert.equal(await page.locator('pre').filter({hasText:'First'}).first().textContent(),'First\nSecond\tline');assert.equal(await page.getByText('Reason: <b>Reason</b>',{exact:true}).count(),1);assert.equal(await page.locator('section b').count(),0);
+ await page.getByText('View recorded evidence',{exact:true}).click();await page.getByText('View recorded evidence',{exact:true}).click();assert.equal(calls.filter(c=>c.path.endsWith('/evidence')).length,1);assert.equal(calls.some(c=>c.method!=='GET'||c.path.endsWith('/manifest')||c.path.endsWith('/close')),false);
+ errorMode=true;await page.goto('http://127.0.0.1:5173/#runs/failure');await page.getByRole('heading',{name:'The run stopped.',exact:true}).waitFor();assert.equal(await page.getByText('Review this run before continuing.',{exact:true}).count(),1);assert.equal(await page.locator('.error details').getAttribute('open'),null);await page.locator('.error summary').click();assert.match(await page.locator('.error pre').textContent(),/req-fixture/);
+ unknown=true;await page.goto('http://127.0.0.1:5173/#runs/unknown');await page.getByRole('heading',{name:'The server returned an unrecognized error response.',exact:true}).waitFor();assert.equal(await page.locator('.error pre html').count(),0);
+ console.log('API error and evidence browser checks: 11 assertions passed; fixture API, GET-only evidence, no vendor calls.');
+}finally{await browser.close();}
