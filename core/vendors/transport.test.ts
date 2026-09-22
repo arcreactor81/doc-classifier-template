@@ -109,3 +109,9 @@ test('confidence schema errors are terminal and cannot receive reader-only schem
   assert.equal(h.sent.length, 1);
   await assert.rejects(executeVendor(confidence, policy, h.deps, decode), (error: unknown) => (error as ValidationFailure).code === 'E_RETRY_POLICY');
 });
+
+test('redirect responses are retained and rejected without following or retrying',async()=>{
+ const h=harness([new Response('redirect-body',{status:302,headers:{location:'https://elsewhere.invalid/'}})]);
+ await assert.rejects(executeVendor(request,policy,h.deps,decode),{code:'E_VENDOR_REDIRECT',kind:'document'});
+ assert.equal(h.sent.length,1);assert.equal(h.sent[0].redirect,'manual');assert.equal(h.sent[0].body,request.body);assert.equal(h.raw[0].raw,'redirect-body');assert.equal(h.raw[0].networkFailure,false);assert.deepEqual(h.sleeps,[]);
+});

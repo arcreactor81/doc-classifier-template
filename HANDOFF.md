@@ -134,3 +134,11 @@ Final sanitized export verification: 189 tests passed, both TypeScript checks pa
 ## Workflow instance identity repair (2026-09-22)
 
 Concatenating a run UUID and full document fingerprint produced a 101-character Workflow instance ID, exceeding Cloudflare's 100-character maximum. Instance IDs now use a stable 68-character value: doc_ plus SHA-256 of the complete framed run/document identities. Neither identity is truncated. Classification requests, decision rules and document content are unchanged. A halted run is not retried automatically. Three focused tests cover the supported alphabet/length, determinism, full identity contribution and invalid inputs.
+
+## Transport compatibility, recorded health and correction UI (2026-09-22)
+
+Workers fetch now uses manual redirect handling and explicitly rejects redirects after recording the response; credential-bearing requests are never followed to another URL. The same handling covers interactive requests, Batch operations and Batch closure. A real Workers-runtime regression uses only a local loopback server. Transport-focused verification reported 33 passing checks without vendor calls; combined release verification remains separate.
+
+Health reports recorded vendor history and unknown accounting instead of always saying no vendor was contacted. The UI shows threshold and justification, binds correction listings to the selected manifest/run, clears stale scan state, presents proposed examples/exclusions/types and downloads their exact JSON for Git review. These are proposals, not automatic classification changes. Focused browser checks use fixture APIs; no production corrections are applied.
+
+Final sanitized release gate passed 199 tests, both TypeScript checks and the production UI build. The runtime transport regression used a local loopback server only; no vendor calls occurred in release verification.

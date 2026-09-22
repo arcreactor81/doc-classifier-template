@@ -47,3 +47,12 @@ test('unexpected remote input identity blocks deletion and malformed ids never c
  await assert.rejects(cancelAndDeleteBatchInputs([{...job,inputFileId:'../other'}],h.deps),/identifier/);
  assert.equal(h.calls.length,1);
 });
+
+test('closure rejects and retains redirects without following or acknowledging cleanup',async()=>{
+ const h=harness([]);let calls=0;const raw:unknown[]=[];
+ h.deps.fetch=async(_url,init)=>{calls++;assert.equal(init.redirect,'manual');return new Response('redirect retained',{status:302,headers:{location:'https://elsewhere.invalid/', 'x-request-id':'redirect-id'}});};
+ h.deps.persistRaw=async(value)=>{raw.push(value);};
+ await assert.rejects(cancelAndDeleteBatchInputs([job],h.deps),/rejected Batch cleanup/);
+ assert.equal(calls,1);assert.deepEqual(h.events,[]);
+ assert.deepEqual(raw,[{operation:'retrieve',resourceId:'batch_1',status:302,requestId:'redirect-id',raw:'redirect retained',networkFailure:false}]);
+});

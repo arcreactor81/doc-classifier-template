@@ -99,7 +99,7 @@ async function fetchOnce(url: string, init: RequestInit, context: BatchContext, 
   const attemptId = deps.attemptId(); id(attemptId);
   const start = deps.now();
   let response: Response;
-  try { response = await deps.fetch(url, { ...init, redirect: 'error', headers: { ...Object.fromEntries(new Headers(init.headers).entries()), authorization: `Bearer ${secret}` } }); }
+  try { response = await deps.fetch(url, { ...init, redirect: 'manual', headers: { ...Object.fromEntries(new Headers(init.headers).entries()), authorization: `Bearer ${secret}` } }); }
   catch {
     await persistRaw(deps, { attemptId, role: 'reader', modelRequested: context.modelPolicy.id, status: null, requestId: null, raw: null, networkFailure: true, latencyMs: deps.now() - start, retryAfter: null });
     await deps.logCall({ attemptId, role: 'reader', modelRequested: context.modelPolicy.id, status: null, requestId: null, networkFailure: true, latencyMs: deps.now() - start, modelReturned: null, usage: null });
@@ -124,6 +124,7 @@ async function requestJson(url: string, init: RequestInit, context: BatchContext
   await persistRaw(deps, { ...attempt, raw, latencyMs: deps.now() - start });
   await deps.logCall({ attemptId: attempt.attemptId, role: 'reader', modelRequested: context.modelPolicy.id, status: attempt.status,
     requestId: attempt.requestId, networkFailure: false, latencyMs: deps.now() - start, modelReturned: null, usage: null });
+  if (response.status >= 300 && response.status < 400) fail('E_VENDOR_REDIRECT', 'Batch redirects are not followed. The unchanged response was retained.');
   if (response.status === 401 || response.status === 403) fail('E_VENDOR_AUTH', 'Reader credentials were rejected.');
   if (!response.ok) fail('E_BATCH_HTTP', 'Batch API request failed; the recorded response has not been automatically retried.');
   let value: unknown;
@@ -198,7 +199,7 @@ export async function ingestBatchResults(state: BatchSnapshot, expectedIds: read
       }
       await deps.logCall({ attemptId: attempt.attemptId, role: 'reader', modelRequested: context.modelPolicy.id, status: attempt.status, requestId: attempt.requestId,
         networkFailure: false, latencyMs: deps.now() - start, modelReturned: null, usage: null });
-      fail(response.status === 401 || response.status === 403 ? 'E_VENDOR_AUTH' : 'E_BATCH_HTTP', 'Batch result file could not be retrieved.');
+      fail(response.status >= 300 && response.status < 400 ? 'E_VENDOR_REDIRECT' : response.status === 401 || response.status === 403 ? 'E_VENDOR_AUTH' : 'E_BATCH_HTTP', 'Batch result file could not be retrieved.');
     }
     let carry = '', lineNumber = 0;
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });

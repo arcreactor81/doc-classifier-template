@@ -1,4 +1,17 @@
 ﻿export const uiCopy = {
+  proposalReview: 'Proposals for Git review', proposalReviewHelp: 'Review these suggestions against the original documents. Accept or reject them in your project pack in Git, then deploy. Downloading does not change the taxonomy or threshold.',
+  proposedExamples: 'Proposed examples', proposedExclusions: 'Proposed exclusions', proposedTypes: 'Proposed types', proposalDownload: 'Download proposals JSON',
+  proposalType: 'Type', proposalEvidence: 'Evidence tags', proposalIdentifier: 'Suggested identifier', proposalIdentifierMissing: 'Choose an identifier in Git.',
+  proposalIncompleteType: 'Complete the definition and exclusions in Git before deploying this type.', proposalNoExcerpt: 'No retained excerpt is available. Review the original document.',
+  proposalNoExamples: 'No example candidates were proposed.', proposalNoExclusions: 'No exclusion candidates were proposed.', proposalNoTypes: 'No new types were proposed.',
+
+  correctionManifestRequired: 'Choose the manifest for this run before choosing its corrected tree.',
+  correctionRescan: 'The run or manifest changed. Choose the corrected tree again before reviewing corrections.',
+  vendorNoResponse: 'The latest inference attempt received no HTTP response.', vendorResponseFailed: 'The latest inference attempt received an unsuccessful HTTP response.', vendorResponseReceived: 'An HTTP success response was recorded. This alone does not establish a valid model result.',
+  latestVendorAttempt: 'Latest recorded attempt', vendorRole: 'Role', vendorHttpStatus: 'HTTP status', vendorAttemptTime: 'Recorded at', vendorUnknownSpend: 'Calls with unknown spend', vendorRoleReader: 'Reader', vendorRoleConfidence: 'Confidence check', vendorRoleRecovery: 'Outline recovery',
+  currentThreshold: 'Current threshold', thresholdJustification: 'Threshold justification', vendorStatus: 'Vendor status',
+  healthUnavailable: 'Unavailable', vendorNotContacted: 'No inference calls have been recorded.',
+
   proposalContextUnavailable: 'Text excerpts are unavailable for some proposed examples. Review the original documents before accepting examples.',
   invalidTokenCount: 'A recorded token count is invalid. Stop this run and ask the technical contact to check the usage record.',
   invalidProjectCopy: 'Project copy contains a missing value, unknown or protected key, HTML, or prohibited wording. Correct the project pack in Git.',

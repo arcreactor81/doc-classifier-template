@@ -112,3 +112,9 @@ test('stream storage failure prevents result parsing; oversized lines fail visib
   const limited = harness([new Response(line('1'))]);
   await assert.rejects(ingestBatchResults(await snapshot(), ['1'], context, limited.deps, { ...io, maxResultLineBytes: 10 }), /limit/i);
 });
+
+test('Batch redirects use manual mode and persist rejection without submission retries',async()=>{
+ const h=harness([new Response('redirect-body',{status:307,headers:{location:'https://elsewhere.invalid/'}})]);
+ await assert.rejects(createBatch('file_input',context,h.deps,io),{code:'E_VENDOR_REDIRECT'});
+ assert.equal(h.requests.length,1);assert.equal(h.requests[0].init.redirect,'manual');assert.ok(h.order.includes('persist'));assert.ok(h.order.includes('log'));assert.equal(h.states.length,0);
+});

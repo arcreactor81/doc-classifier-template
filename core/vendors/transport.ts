@@ -95,7 +95,7 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
       let status: number | null = null, requestId: string | null = null, raw: string | null = null, retryAfter: string | null = null;
       let networkFailure = false;
       try {
-        const response = await deps.fetch(endpoint, { method: 'POST', headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' }, body, redirect: 'error' });
+        const response = await deps.fetch(endpoint, { method: 'POST', headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' }, body, redirect: 'manual' });
         status = response.status;
         requestId = response.headers.get('x-request-id') ?? response.headers.get('request-id');
         retryAfter = response.headers.get('retry-after');
@@ -126,6 +126,10 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
         if (transportAttempt === policy.transportAttempts) return exhausted(role, deps, policy, new ValidationFailure('E_VENDOR_UNAVAILABLE', 'document', 'Vendor unavailable after all permitted attempts.'));
         await deps.sleep(retryDelay(retryAfter, transportAttempt, policy, deps.now()));
         continue;
+      }
+      if (status !== null && status >= 300 && status < 400) {
+        await deps.recordDocumentOutcome(role, false);
+        throw new ValidationFailure('E_VENDOR_REDIRECT', 'document', 'Vendor redirects are not followed. The unchanged response was retained.');
       }
       if (status === 401 || status === 403) throw new ValidationFailure('E_VENDOR_AUTH', 'blocker', 'Vendor credentials were rejected.');
       const error = record(parsed) && record(parsed.error) ? parsed.error : null;

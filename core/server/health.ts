@@ -1,3 +1,4 @@
+import { readVendorHealth,type VendorHealth } from './vendor-health.ts';
 import rawProject from 'project-pack' with {type:'json'};
 import { validateProject, typeVersion, type ProjectPack } from '../config/project.ts';
 import { pricingFor } from './capabilities.ts';
@@ -14,7 +15,7 @@ export async function health(env:Env):Promise<Record<string,unknown>>{
  for(const mode of ['interactive','batch'] as const){try{pricingFor(pack as ProjectPack,mode);}catch(error){add('E_PRICING_UNVERIFIED','Published prices must be recorded before a run can start.',{mode});}}
  if(String(env.MODEL_CALLS_ENABLED)!=='true')add('E_MODEL_CALLS_DISABLED','Model calls are disabled by the deployment.');
  try{accessIssuer(env.ACCESS_TEAM_DOMAIN);if(!env.ACCESS_AUD)throw new Error('Missing audience.');}catch{add('E_ACCESS_CONFIGURATION','Connect the existing Access application identity settings.');}
- let threshold:unknown=null,textHeldRuns=0;
+ let threshold:unknown=null,textHeldRuns=0;let vendorHistory:VendorHealth={status:'unavailable',latest:null,unknownSpendCount:null};
  try{
   if(!env.DB)throw new Error('DB binding is absent.');
   const probe=`deployment-${env.BUILD_COMMIT}`;
@@ -23,6 +24,7 @@ export async function health(env:Env):Promise<Record<string,unknown>>{
   if(!control)throw new Error('Controls were not initialized.');
   if(control.kill)add('E_KILL_SWITCH','The kill switch is set.');
   threshold={value:control.threshold,justification:control.threshold_justification};
+  vendorHistory=await readVendorHealth(env.DB);
   textHeldRuns=(await env.DB.prepare('SELECT COUNT(*) AS count FROM runs WHERE text_held=1').first<{count:number}>())?.count??0;
  }catch(error){add('E_STORAGE_D1','The database write probe failed.',{detail:error instanceof Error?error.message:String(error)});}
  try{
@@ -37,6 +39,6 @@ export async function health(env:Env):Promise<Record<string,unknown>>{
  for(const [name,binding] of [['reader',env.OPENAI_API_KEY],['confidence',env.JEV_API_KEY]] as const){
   try{if(!binding||!await binding.get())add('E_VENDOR_KEY','A vendor credential is missing.',{role:name});}catch{add('E_VENDOR_KEY','A vendor credential could not be read.',{role:name});}
  }
- return{status:blockers.length?'NOT READY':'READY',blockers,versions:{build:env.BUILD_COMMIT,pins:pack.pins??null},project:{id:typeof pack.id==='string'?pack.id:null,productName:typeof pack.productName==='string'?pack.productName:null,typeVersion:pack.typeFile?await typeVersion(JSON.stringify(pack.typeFile)):null,types:Array.isArray(pack.typeFile?.types)?pack.typeFile.types:null,copyOverrides:pack.copyOverrides},modelCallsEnabled:String(env.MODEL_CALLS_ENABLED)==='true',textHeldRuns,threshold,vendorStatus:'not_contacted'};
+ return{status:blockers.length?'NOT READY':'READY',blockers,versions:{build:env.BUILD_COMMIT,pins:pack.pins??null},project:{id:typeof pack.id==='string'?pack.id:null,productName:typeof pack.productName==='string'?pack.productName:null,typeVersion:pack.typeFile?await typeVersion(JSON.stringify(pack.typeFile)):null,types:Array.isArray(pack.typeFile?.types)?pack.typeFile.types:null,copyOverrides:pack.copyOverrides},modelCallsEnabled:String(env.MODEL_CALLS_ENABLED)==='true',textHeldRuns,threshold,vendorStatus:vendorHistory.status,vendorHistory};
 }
 export async function requireReady(env:Env):Promise<void>{const status=await health(env);if(status.status!=='READY')throw new ServerFailure('E_NOT_READY','blocker',serverCopy.notReady);}

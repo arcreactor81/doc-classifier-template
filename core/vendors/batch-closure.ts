@@ -34,7 +34,7 @@ export async function cancelAndDeleteBatchInputs(jobs: readonly BatchCleanupJob[
  async function request(operation: BatchCleanupRaw['operation'], resourceId: string): Promise<unknown> {
   const path=operation==='delete'?`files/${resourceId}`:`batches/${resourceId}${operation==='cancel'?'/cancel':''}`;
   let response:Response;
-  try { response=await deps.fetch(`https://api.openai.com/v1/${path}`,{method:operation==='delete'?'DELETE':operation==='cancel'?'POST':'GET',headers:{Authorization:`Bearer ${secret}`}}); }
+  try { response=await deps.fetch(`https://api.openai.com/v1/${path}`,{redirect:'manual',method:operation==='delete'?'DELETE':operation==='cancel'?'POST':'GET',headers:{Authorization:`Bearer ${secret}`}}); }
   catch { await deps.persistRaw({operation,resourceId,status:null,requestId:null,raw:null,networkFailure:true});fail('The Batch cleanup request outcome is uncertain; inspect its audit record before retrying closure.'); }
   const reader=response.body?.getReader(),chunks:Uint8Array[]=[];let size=0,interrupted=false;
   if (reader) {
