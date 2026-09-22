@@ -3,7 +3,7 @@ import { correctionContext } from './correction-context.ts';
 import { requireProject,typeVersion,type ProjectPack } from '../config/project.ts';
 import { authorizeRunBudget,readRunBudget } from '../cost/run-budget.ts';
 import { buildStructuredState } from '../digest/structured-state.ts';
-import { VENDOR_PROMPTS } from '../vendors/requests.ts';
+import { VENDOR_PROMPTS,READER_PROMPT_VERSION } from '../vendors/requests.ts';
 import type { ConfidenceOutput,ReaderOutput } from '../vendors/validate.ts';
 import { decide,type Decision } from '../domain/decision.ts';
 import type { BuilderManifest,BuilderEntry } from '../builder/builder.ts';
@@ -44,7 +44,7 @@ async function quote(request:Request,env:Env,store:Store,actor:string):Promise<R
   docs.push(value as unknown as QuoteDocument);
  }
  const id=crypto.randomUUID(),version=await typeVersion(JSON.stringify(pack.typeFile));
- await env.DB.prepare('INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES(?,?,?,?,?,?,?,?)').bind(id,actor,now(),raw.mode,version,await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS})),JSON.stringify(docs),JSON.stringify({policy:'reported_usage',version:1})).run();
+ await env.DB.prepare('INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES(?,?,?,?,?,?,?,?)').bind(id,actor,now(),raw.mode,version,await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS})),JSON.stringify(docs),JSON.stringify({policy:'reported_usage',version:1,readerPromptVersion:READER_PROMPT_VERSION})).run();
  return response({quoteId:id,typeVersion:version,mode:raw.mode});
 }
 async function createRun(request:Request,env:Env,store:Store,actor:string):Promise<Response>{

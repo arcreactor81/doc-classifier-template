@@ -148,3 +148,9 @@ Final sanitized release gate passed 199 tests, both TypeScript checks and the pr
 The browser deployment guide now distinguishes the deploying owner's cloud setup from website users' sign-in, confirms public template availability, and explains enabling inference only after all other Health blockers are resolved. Fresh-account provisioning, Access sign-in and authenticated API acceptance remain unverified; no local installation is required by the intended owner setup flow.
 
 Added reproducible acceptance scripts. The builder exercise passed 19 checks using actual Chromium origin-private filesystem handles, writes, Web Locks and native moves; its picker is injected and native desktop dialogs remain outside coverage. The correction exercise passed 26 checks using local workerd, D1/R2 and locally signed authentication, covering manifest closure, text deletion, stored corrections and explicit threshold application. Its source records are synthetic, every non-fixture outbound request is denied and it makes no vendor calls. These checks establish local behavior, not live model quality or fresh-account deployment acceptance.
+
+## Exact reader evidence instructions (2026-09-22)
+
+The owner approved a generic clarification to the reader prompt, versioned reader-exact-evidence-v2. Evidence strings must copy exact contiguous source substrings, preserving whitespace, line breaks, punctuation and source quotation marks without added formatting. The strict verbatim validator is unchanged; no output repair, fallback or changed-request retry was added. Confidence and recovery prompts are unchanged. Quotes record the reader prompt version.
+
+The regression verifies JSON-decoded Unicode code points, multiline text, tabs and literal quotation marks, and retains rejection of normalized or rewritten evidence. Holdout validation of this prompt version remains pending; this release claims no model-quality or bake-off result.

@@ -1,6 +1,7 @@
 import { buildStructuredState } from '../digest/structured-state.ts';
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as requestModule from './requests.ts';
 import { buildConfidenceRequest, buildReaderRequest, buildRecoveryRequest, decodeConfidence, decodeReader, decodeRecovery, verifyModelPolicy, batchJsonl, parseBatchResults } from './requests.ts';
 const types = { types: [{ id: 'type_a', name: 'Type A', what: 'Definition A', not_for: 'Exclusion A', examples: ['Example A'] }], none_of_these: { name: 'None', what: 'No defined type' } };
 const pin = { id: 'jev-1.13.0', policy: 'versioned' as const, date: '2026-09-22', reason: 'Initial configuration' };
@@ -78,4 +79,22 @@ test('current untrimmed structured state reaches the confidence request without 
  assert.deepEqual(JSON.parse(request.body).state,state.state);assert.equal(JSON.parse(request.body).state.fullText,fullText);assert.equal(state.tokenCount,null);
  for(const fullText of [null,0,''])assert.throws(()=>buildConfidenceRequest({pin,typeFile:types,serializedDigest:JSON.stringify({...state.state,fullText})}));
  assert.throws(()=>buildConfidenceRequest({pin,typeFile:types,serializedDigest:JSON.stringify({...state.state,unknown:'field'})}));
+});
+
+const approvedEvidenceInstruction = 'Each evidence quote must be an exact contiguous substring of the supplied document text, including its whitespace, line breaks and punctuation. Preserve source line breaks as JSON newline escapes. Do not join wrapped lines, normalize spaces, change punctuation, or add ellipses absent from the source. The JSON string value must contain only source text: do not add surrounding quotation-mark characters or Markdown formatting unless those characters occur in the source. Check each quoted substring against the supplied text before returning it.';
+test('reader exact-evidence prompt is versioned and includes the approved generic contract',()=>{
+ assert.equal((requestModule as unknown as Record<string,unknown>).READER_PROMPT_VERSION,'reader-exact-evidence-v2');
+ const body=JSON.parse(buildReaderRequest({pin:alias,typeFile:types,text,effort:'low',maxOutputTokens:1000}).body);
+ assert.ok(body.input[0].content.includes(approvedEvidenceInstruction));
+ assert.ok(!requestModule.VENDOR_PROMPTS.confidence.includes(approvedEvidenceInstruction));
+ assert.ok(!requestModule.VENDOR_PROMPTS.recovery.includes(approvedEvidenceInstruction));
+});
+test('reader preserves multiline tabs unicode and literal source quotes through JSON and validates exact evidence',()=>{
+ const source='First\nSecond\t\u201cUnicode caf\u00e9 \u03a9 \u{1F642}\u201d\nA "quoted" phrase';
+ const body=JSON.parse(buildReaderRequest({pin:alias,typeFile:types,text:source,effort:'low',maxOutputTokens:1000}).body);
+ assert.equal(body.input[1].content,source);
+ assert.deepEqual(Array.from(body.input[1].content as string).map(char=>char.codePointAt(0)!).filter(code=>code>127),[0x201c,0x00e9,0x03a9,0x1f642,0x201d]);
+ const withEvidence=(evidence:string[])=>{const raw=readerBody();raw.output[0].content[0].text=JSON.stringify({verdicts:[{type_id:'type_a',is_type:true,rationale:'Reason',evidence,closest_alternative:null}]});return raw;};
+ for(const exact of [source,'First\nSecond\t\u201cUnicode caf\u00e9 \u03a9 \u{1F642}\u201d','"quoted"'])assert.deepEqual(decodeReader(withEvidence([exact]),alias,['type_a'],source).verdicts[0].evidence,[exact]);
+ for(const changed of ['First Second','Second \u201cUnicode caf\u00e9 \u03a9 \u{1F642}\u201d','"First"','\u201cUnicode cafe \u03a9 \u{1F642}\u201d'])assert.throws(()=>decodeReader(withEvidence([changed]),alias,['type_a'],source),/verbatim/);
 });
