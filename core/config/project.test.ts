@@ -13,7 +13,7 @@ test('structural vocabulary collision checks every word in names descriptions ex
 });
 test('missing configuration stays missing rather than gaining defaults',()=>{
  const issues=validateProject({});
- for(const field of ['typeFile','settings','pins','tokenizers','limits']) assert.ok(issues.some(x=>x.path.startsWith(field)));
+ for(const field of ['typeFile','settings','pins','limits']) assert.ok(issues.some(x=>x.path.startsWith(field)));
 });
 test('type versions hash exact source bytes and reject mutation assumptions',async()=>{
  assert.equal(await typeVersion('a'),await typeVersion('a'));
@@ -54,5 +54,7 @@ test('explicit unknown throughput limits are valid while missing or invalid valu
 test('run-selected budgets replace project spending approval and reader billing-tokenizer gates',()=>{
  const issues=validateProject({budget:null,tokenizers:{confidence:{id:'official',verifiedAt:'2026-09-22',source:'https://docs.typesafe.ai'},reader:null}});
  assert.equal(issues.some(x=>x.path==='budget'||x.path==='tokenizers.reader'),false);
- assert.ok(validateProject({tokenizers:{confidence:null}}).some(x=>x.path==='tokenizers.confidence'));
+ assert.equal(validateProject({tokenizers:{confidence:null}}).some(x=>x.path.startsWith('tokenizers')),false);
 });
+
+test('untrimmed state policy is explicit and retired counter fields never gate readiness',()=>{const errors=(settings:unknown)=>validateProject({settings}).filter(i=>i.path==='settings.confidenceStatePolicy'||i.path==='settings.digestBudget'||i.path.startsWith('tokenizers'));assert.deepEqual(errors({confidenceStatePolicy:'untrimmed-structured-state-v2'}),[]);assert.ok(errors({}).some(i=>i.path==='settings.confidenceStatePolicy'));});

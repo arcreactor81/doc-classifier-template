@@ -120,9 +120,10 @@ async function correct(main: HTMLElement): Promise<void> {
   }));const decisions=new Map<string,FolderDecision['action']>();
   async function submitCorrection():Promise<void>{
     if(!run.value||!listing.length)throw new Error(c.chooseFirst);
-    const result=await api<{correctionId:string;diff:CorrectionDiff;proposals:CorrectionProposals}>(      '/api/runs/'+encodeURIComponent(run.value)+'/corrections',
+    const result=await api<{correctionId:string;diff:CorrectionDiff;proposals:CorrectionProposals;proposalContext?:{unavailableTags:string[];reason:string}}>(      '/api/runs/'+encodeURIComponent(run.value)+'/corrections',
       {files:listing,sidecarPaths,checkedFolders:Array.from(checked).filter(([,input])=>input.checked).map(([name])=>name),folderDecisions:Array.from(decisions,([folder,action])=>({folder,action}))});
     output.replaceChildren();const proposals=result.proposals;
+    if(result.proposalContext?.unavailableTags.length)output.append(el('p',c.proposalContextUnavailable));
     let first=c.filedCount(proposals.filedCheck.wrong,proposals.filedCheck.checked);
     if(proposals.raise)first+=' '+c.raiseSentence(proposals.raise.threshold,proposals.raise.correctSentToReview);
     else if(proposals.filedCheck.status==='cannot_separate')first+=' '+c.cannotSeparate;

@@ -4,7 +4,7 @@ export interface DocumentType { id:string; name:string; what:string; not_for:str
 export interface TypeFile { types:DocumentType[]; none_of_these:{name:string;what:string} }
 export interface ModelPin { id:string; date:string; reason:string; policy:'versioned'|'owner_approved_alias' }
 export interface ProjectSettings {
- digestBudget:number; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
+ confidenceStatePolicy:'untrimmed-structured-state-v2'; digestBudget?:number|null; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
  recoveryMinimumHeadings:number; minimumFiledCount:number; batchCutoff:number; defaultMode:'interactive'|'batch';
  pdfPolicy:{largeFontRatio:number;maxHeadingCharacters:number;topPageFraction:number;gapRatio:number};
 }
@@ -14,7 +14,8 @@ export interface ProjectPack {
  settings:ProjectSettings; pins:{confidence:ModelPin;reader:ModelPin;recovery:ModelPin};
  /** Historical project sign-off only; every new run supplies its own budget choice. */
  budget?:{limitNano:string|null;approvedBy:string|null;approvedAt:string|null;reason:string|null}|null;
- tokenizers:{confidence:{id:string;verifiedAt:string;source:string};reader?:{id:string;verifiedAt:string;source:string}|null};
+ /** Retired local-counter metadata; not used by the current state policy. */
+ tokenizers?:{confidence?:{id:string;verifiedAt:string;source:string}|null;reader?:{id:string;verifiedAt:string;source:string}|null}|null;
  limits:{readerRequestsPerMinute:number|null;readerTokensPerMinute:number|null;readerContextTokens:number;readerBatchEnqueuedTokens:number|null;confidenceRequestsPerMinute:number|null;confidenceStateQuestionTokens:number;confidenceAllQuestionTokens:number};
 }
 export interface ConfigIssue {code:string;path:string;detail:string}
@@ -62,8 +63,9 @@ export function validateProject(value:unknown):ConfigIssue[]{
  const settings=value.settings;
  if(!record(settings))issue('settings','Explicit settings are required.');
  else{
-  for(const field of ['digestBudget','readerMaxOutputTokens','recoveryMaxOutputTokens','recoveryMinimumHeadings','minimumFiledCount','batchCutoff'])
+  for(const field of ['readerMaxOutputTokens','recoveryMaxOutputTokens','recoveryMinimumHeadings','minimumFiledCount','batchCutoff'])
    if(!Number.isSafeInteger(settings[field])||Number(settings[field])<1)issue('settings.'+field,'A positive integer is required.');
+  if(settings.confidenceStatePolicy!=='untrimmed-structured-state-v2')issue('settings.confidenceStatePolicy','Select the explicit untrimmed structured-state policy.');
   if(!['low','medium'].includes(String(settings.readerEffort)))issue('settings.readerEffort','Select low or medium.');
   if(!['interactive','batch'].includes(String(settings.defaultMode)))issue('settings.defaultMode','Select interactive or batch.');
   if(!record(settings.pdfPolicy))issue('settings.pdfPolicy','Explicit extraction policy is required.');
@@ -76,11 +78,6 @@ export function validateProject(value:unknown):ConfigIssue[]{
   const versioned=role==='confidence'?/^jev-\d+\.\d+\.\d+$/.test(pin.id):/^gpt-[a-z0-9.]+(?:-[a-z0-9]+)*-\d{4}-\d{2}-\d{2}$/.test(pin.id);
   if(!(pin.policy==='versioned'&&versioned)&&!(pin.policy==='owner_approved_alias'&&alias===pin.id))
    issue('pins.'+role,'Only versioned models or explicitly approved Terra/Luna aliases are permitted.','E_MODEL_POLICY');
- }
- if(!record(value.tokenizers))issue('tokenizers','Verified local tokenizer specifications are required.');
- else for(const role of ['confidence']){
-  const spec=value.tokenizers[role];
-  if(!record(spec)||!nonempty(spec.id)||!nonempty(spec.verifiedAt)||!nonempty(spec.source))issue('tokenizers.'+role,'Verified tokenizer identity and documentation are required.','E_TOKENIZER_UNVERIFIED');
  }
  const integerMoney=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v);
  const positiveRatio=(v:unknown)=>record(v)&&integerMoney(v.numerator)&&integerMoney(v.denominator)&&BigInt(v.numerator)>0n&&BigInt(v.denominator)>0n;

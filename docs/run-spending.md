@@ -12,4 +12,4 @@ The app records usage returned by each vendor API and converts it with the run's
 
 Limits stop new calls when recorded spending reaches them. They cannot cancel charges already incurred, and they are not guaranteed maximum bills. Parallel calls can be in flight together. Batch costs may arrive after many requests have completed; the submitted work can exceed a threshold before the app sees its usage. Cancellation does not erase completed work.
 
-The app no longer requires a pre-run cost prediction. The official Jev tokenizer remains necessary for selecting the 6,000-token digest; that is separate from spending measurement.
+The app no longer requires a pre-run cost prediction. The confidence check receives full extracted text and structure without a local token counter. Actual token counts arrive with vendor responses.

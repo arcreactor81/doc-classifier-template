@@ -1,3 +1,4 @@
+import { buildStructuredState } from '../digest/structured-state.ts';
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildConfidenceRequest, buildReaderRequest, buildRecoveryRequest, decodeConfidence, decodeReader, decodeRecovery, verifyModelPolicy, batchJsonl, parseBatchResults } from './requests.ts';
@@ -68,4 +69,13 @@ test('reader and recovery explicitly disable implicit cache breakpoints without 
     assert.equal(JSON.stringify(body.input).includes('prompt_cache_breakpoint'), false);
     assert.equal(body.input.at(-1).content, text);
   }
+});
+
+test('current untrimmed structured state reaches the confidence request without loss or local token count',()=>{
+ const fullText='[Page 1]\n'+ 'Complete source '.repeat(1000);
+ const state=buildStructuredState(fullText,{headings:[],tables:[],blocks:[{position:9,text:fullText.slice(9)}]},[]);
+ const request=buildConfidenceRequest({pin,typeFile:types,serializedDigest:state.serialized});
+ assert.deepEqual(JSON.parse(request.body).state,state.state);assert.equal(JSON.parse(request.body).state.fullText,fullText);assert.equal(state.tokenCount,null);
+ for(const fullText of [null,0,''])assert.throws(()=>buildConfidenceRequest({pin,typeFile:types,serializedDigest:JSON.stringify({...state.state,fullText})}));
+ assert.throws(()=>buildConfidenceRequest({pin,typeFile:types,serializedDigest:JSON.stringify({...state.state,unknown:'field'})}));
 });

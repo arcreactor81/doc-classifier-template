@@ -1,4 +1,6 @@
 ﻿export const uiCopy = {
+  proposalContextUnavailable: 'Text excerpts are unavailable for some proposed examples. Review the original documents before accepting examples.',
+  invalidTokenCount: 'A recorded token count is invalid. Stop this run and ask the technical contact to check the usage record.',
   invalidProjectCopy: 'Project copy contains a missing value, unknown or protected key, HTML, or prohibited wording. Correct the project pack in Git.',
   budgetTitle: 'Spending limits for this run', budgetMode: 'Budget choice', budgetLimited: 'Set spending limits', budgetUnlimited: 'Run without spending limits',
   budgetBlended: 'Blended \u00b7 both vendors', budgetOpenai: 'OpenAI', budgetTypesafe: 'TypeSafe', budgetUsd: 'Limit in USD', budgetHelp: 'Set at least one limit. You can combine an overall limit with separate vendor limits. An empty field leaves that category without its own limit.',
@@ -18,7 +20,6 @@
   newLocal: 'Start a new local extraction', localSession: 'Reselect the source folder to resume this local extraction. Previously failed documents remain recorded; use a new extraction to retry.',
   chooseSource: 'Choose source folder', source: 'Source folder', extraction: 'Local extraction', files: 'Files', duration: 'Measured elapsed time', extracted: 'Extracted', failure: 'Could not process',
   alreadyConfirmed: 'This local extraction already has a confirmed run. Resume its upload, or explicitly start a new local extraction for another run.',
-  tokenizerUnavailable: 'A verified local tokenizer is not available for this project. Digest preparation and uploads are blocked until it is configured.',
   duplicateContent: 'Duplicate document content was found. Review the source folder before creating a run; no file has been silently removed.',
   sourceSetChanged: 'Documents from this local run are missing from the selected folder. Reselect the original folder or explicitly start a new extraction.',
   extractionIncomplete: 'Local extraction is unfinished. Reselect the source folder to resume it.',
@@ -47,10 +48,10 @@
   helpSteps: [
     ['1. Read locally', 'Choose your source folder. The browser extracts text and structure and computes a content fingerprint. Original documents never leave your machine. Scanned documents are reported without OCR.'],
     ['2. Confirm the run', 'Choose overall or vendor spending limits, or explicitly acknowledge running without limits. Choose interactive or Batch processing. Nothing is uploaded before you confirm.'],
-    ['3. Compare both systems', 'The confidence check reads a structured digest; the reader sees the full text. Deterministic rules place a document in its type folder only when both agree at or above the certainty threshold. Notes and disagreement go to review.'],
+    ['3. Compare both systems', 'Both systems receive the full extracted text. The confidence check also receives the document structure. Nothing is shortened to fit a local token count. Deterministic rules place a document in its type folder only when both agree at or above the certainty threshold. Notes and disagreement go to review.'],
     ['4. Build your tree', 'Download the manifest and select your originals and destination. The builder copies matching files, adds decision notes to review and failure folders, and records every missing or conflicting file.'],
     ['5. Correct and learn', 'Move files between folders, then identify which folders you checked. The system reports every move and proposes changes. Nothing is applied automatically.'],
   ],
   wrongTitle: 'When something goes wrong', wrongRows: [['A document cannot be read', 'Its reason appears in could_not_process. Others continue.'], ['The systems disagree', 'The document goes to human_review for your decision.'], ['A model pin, key or storage check fails', 'The affected run stops. Health shows the blocker and what to do.'], ['A source file is missing during building', 'It is listed as not found. Select the correct source and resume.']],
-  faqTitle: 'Common questions', faq: [['When is uploaded text deleted?', 'Downloading the finished manifest or explicitly closing a run deletes uploaded text and outline. Decisions, vendor outputs, digests and fingerprints remain. Nothing is deleted on a timer.'], ['Will corrections change future results automatically?', 'No. Threshold changes require your explicit action. Definition and example changes are proposals for review in Git.'], ['Can I resume a build?', 'Yes. Files already present with the same fingerprint are skipped; conflicting files are left unchanged.'], ['Why Chrome or Edge?', 'Local folder access lets the app build your tree while keeping originals on your machine. Other browsers are not supported.']],
+  faqTitle: 'Common questions', faq: [['When is uploaded text deleted?', 'Downloading the finished manifest or explicitly closing a run deletes uploaded text and outline. Decisions, vendor outputs and fingerprints remain. Nothing is deleted on a timer.'], ['Will corrections change future results automatically?', 'No. Threshold changes require your explicit action. Definition and example changes are proposals for review in Git.'], ['Can I resume a build?', 'Yes. Files already present with the same fingerprint are skipped; conflicting files are left unchanged.'], ['Why Chrome or Edge?', 'Local folder access lets the app build your tree while keeping originals on your machine. Other browsers are not supported.']],
 } as const;

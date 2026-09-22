@@ -1,7 +1,7 @@
 import { WorkflowEntrypoint,type WorkflowEvent,type WorkflowStep } from 'cloudflare:workers';
 import { NonRetryableError } from 'cloudflare:workflows';
 import { requireProject } from '../config/project.ts';
-import { buildDigest,DIGEST_POLICY_VERSION,DigestBudgetError,type DigestResult } from '../digest/digest.ts';
+import { buildStructuredState,type StructuredStateResult } from '../digest/structured-state.ts';
 import { verifyRecoveredHeadings } from '../digest/recovery.ts';
 import { buildConfidenceRequest,buildReaderRequest,buildRecoveryRequest,decodeConfidence,decodeReader,decodeRecovery } from '../vendors/requests.ts';
 import type { ConfidenceOutput,ReaderOutput } from '../vendors/validate.ts';
@@ -9,7 +9,6 @@ import { decide,type Decision } from '../domain/decision.ts';
 import { Runner,guard } from './execution.ts';
 import { batchReader } from './batch-runner.ts';
 import { Store } from './store.ts';
-import { codecFor } from './capabilities.ts';
 import { failure,ServerFailure } from './errors.ts';
 import type { Upload } from './contracts.ts';
 export interface DocumentParams {runId:string;fingerprint:string}
@@ -39,9 +38,8 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
      notes.push('N_OUTLINE_RECOVERED');
     }
    }
-   const confidenceCodec=codecFor(pack.tokenizers.confidence.id);
-   const digestKey=await runner.stage('digest',async()=>buildDigest(outline,{budget:pack.settings.digestBudget,vocabulary:pack.structuralVocabulary,codec:confidenceCodec,policy:{version:DIGEST_POLICY_VERSION,acceptedBy:pack.tokenizers.confidence.source,acceptedAt:pack.tokenizers.confidence.verifiedAt,tokenizerId:confidenceCodec.id}}));
-   const digest=await store.json<DigestResult>(digestKey);notes.push(...digest.notes);
+   const digestKey=await runner.stage('digest',async()=>buildStructuredState(upload.fullText,outline,pack.structuralVocabulary),true);
+   const digest=await store.json<StructuredStateResult>(digestKey);notes.push(...digest.notes);
    await this.env.DB.prepare('UPDATE documents SET digest_key=?,notes_json=? WHERE run_id=? AND fingerprint=?').bind(digestKey,JSON.stringify([...new Set(notes)]),runId,fingerprint).run();
    const confidenceRequest=buildConfidenceRequest({pin:pack.pins.confidence,typeFile:pack.typeFile,serializedDigest:digest.serialized});
    const confidenceKey=await runner.vendor(confidenceRequest,pack,raw=>decodeConfidence(raw,pack.pins.confidence,pack.typeFile.types.map(type=>type.id)));
@@ -55,7 +53,7 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
    await runner.stage('record-decision',async()=>{const updated=await this.env.DB.prepare("UPDATE documents SET status='complete',decision_json=? WHERE run_id=? AND fingerprint=? AND EXISTS(SELECT 1 FROM runs WHERE id=? AND status='running')").bind(JSON.stringify(decision),runId,fingerprint,runId).run();if(updated.meta.changes!==1)throw new ServerFailure('E_RUN_STOPPED','blocker','The run stopped before this decision could be recorded.');return{decisionKey};});
    await finalize(store,runId);return{decisionKey};
   }catch(error){
-   const issue=error instanceof DigestBudgetError?new ServerFailure(error.code,'document',error.message):failure(error);
+   const issue=failure(error);
    if(issue.kind==='blocker')await store.halt(runId,{code:issue.code,message:issue.message});
    else{
     const pack=requireProject(JSON.parse(run.pack_json));const doc=await store.document(runId,fingerprint);

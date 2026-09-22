@@ -48,8 +48,8 @@ export function buildConfidenceRequest(input: { pin: ModelPin; typeFile: TypeFil
   let state: unknown;
   try { state = JSON.parse(input.serializedDigest); }
   catch { throw new ValidationFailure('E_DIGEST_STATE', 'document', 'Digest state is not valid JSON.'); }
-  if (!record(state) || !exact(state, ['title', 'headings', 'tables', 'sections'])) throw new ValidationFailure('E_DIGEST_STATE', 'document', 'Digest state must contain its four named fields.');
-  if (JSON.stringify(state) !== input.serializedDigest) throw new ValidationFailure('E_DIGEST_STATE', 'document', 'Digest serialization differs from its budgeted state.');
+  if (!record(state) || !(exact(state, ['title', 'headings', 'tables', 'sections']) || exact(state, ['fullText', 'title', 'headings', 'tables', 'sections']) && typeof state.fullText === 'string' && state.fullText.length > 0)) throw new ValidationFailure('E_DIGEST_STATE', 'document', 'Document state must contain its complete named fields.');
+  if (JSON.stringify(state) !== input.serializedDigest) throw new ValidationFailure('E_DIGEST_STATE', 'document', 'Document serialization differs from its structured state.');
   const criteria = Object.fromEntries(input.typeFile.types.map(type => [type.id, { ...type, examples: [...type.examples] }]));
   const questions: Record<string, unknown> = { classification: { type: 'choice', instructions: VENDOR_PROMPTS.confidence,
     criteria: { ...criteria, none_of_these: { ...input.typeFile.none_of_these } } } };

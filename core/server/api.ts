@@ -1,6 +1,7 @@
+import { correctionContext } from './correction-context.ts';
 import { requireProject,typeVersion,type ProjectPack } from '../config/project.ts';
 import { authorizeRunBudget,readRunBudget } from '../cost/run-budget.ts';
-import { buildDigest,DIGEST_POLICY_VERSION,type DigestResult } from '../digest/digest.ts';
+import { buildStructuredState } from '../digest/structured-state.ts';
 import { VENDOR_PROMPTS } from '../vendors/requests.ts';
 import type { ConfidenceOutput,ReaderOutput } from '../vendors/validate.ts';
 import { decide,type Decision } from '../domain/decision.ts';
@@ -9,7 +10,7 @@ import { diffCorrection,type CorrectionTreeFile } from '../correction/diff.ts';
 import { proposeCorrections,type CorrectionProposals,type FolderDecision,type ProposalEvidence } from '../correction/proposals.ts';
 import { actorFor } from './auth.ts';
 import { health,projectSource,requireReady } from './health.ts';
-import { codecFor,EXECUTION_ATTEMPTS } from './capabilities.ts';
+import { EXECUTION_ATTEMPTS } from './capabilities.ts';
 import { Store,shaText,now,type RunRow } from './store.ts';
 import { object,requireValue,exact,identity,jsonBody,parseUpload,validateManifestReady,type Upload } from './contracts.ts';
 import { ServerFailure,failure,serverCopy } from './errors.ts';
@@ -59,9 +60,8 @@ async function createRun(request:Request,env:Env,store:Store,actor:string):Promi
  await store.event(id,null,'run','created',{budget,mode:quote.mode});return response({runId:id},201);
 }
 export function verifyUploadTokens(upload:Upload,pack:ProjectPack):void{
- const confidenceCodec=codecFor(pack.tokenizers.confidence.id);
- requireValue(upload.tokenizerIds.confidence===confidenceCodec.id,'Uploaded digest tokenizer does not match the project.');
- if(!upload.needsOutlineRecovery)buildDigest(upload.outline,{budget:pack.settings.digestBudget,vocabulary:pack.structuralVocabulary,codec:confidenceCodec,policy:{version:DIGEST_POLICY_VERSION,acceptedBy:pack.tokenizers.confidence.source,acceptedAt:pack.tokenizers.confidence.verifiedAt,tokenizerId:confidenceCodec.id}});
+ requireValue(upload.tokenizerIds.confidence===null&&upload.tokenizerIds.reader===null,'This state policy does not use local token counters.');
+ buildStructuredState(upload.fullText,upload.outline,pack.structuralVocabulary);
 }
 async function uploadDocument(request:Request,env:Env,store:Store,run:RunRow):Promise<Response>{
  requireValue(run.status==='uploading','This run is no longer accepting uploads.');const pack=requireProject(JSON.parse(run.pack_json));const raw=await jsonBody(request);requireValue(object(raw),'A document object is required.');identity(raw);
@@ -95,13 +95,15 @@ async function corrections(request:Request,env:Env,store:Store,run:RunRow,actor:
  const raw=await jsonBody(request);requireValue(object(raw),'A correction listing is required.');requireValue(Object.keys(raw).every(key=>['files','checkedFolders','sidecarPaths','folderDecisions'].includes(key)),'Only a local file listing may be submitted.');requireValue(Array.isArray(raw.files)&&Array.isArray(raw.checkedFolders)&&raw.checkedFolders.every(v=>typeof v==='string')&&Array.isArray(raw.sidecarPaths)&&raw.sidecarPaths.every(v=>typeof v==='string'),'Invalid correction listing.');
  for(const file of raw.files){requireValue(object(file)&&Object.keys(file).every(key=>['folder','filename','tag','fingerprint'].includes(key))&&typeof file.folder==='string'&&typeof file.filename==='string','A correction may contain paths and identities only.');}
  const manifest=await manifestFor(store,run),pack=requireProject(JSON.parse(run.pack_json));const diff=diffCorrection({manifest:manifest.entries,files:raw.files as CorrectionTreeFile[],checkedFolders:raw.checkedFolders as string[],sidecarPaths:raw.sidecarPaths as string[],typeFolders:pack.typeFile.types.map(type=>type.id)});
- const evidence:Record<string,ProposalEvidence>={};for(const doc of await store.documents(run.id)){
-  const conf=doc.confidence_key?(await store.json<{value:ConfidenceOutput}>(doc.confidence_key)).value:null;const digest=doc.digest_key?await store.json<DigestResult>(doc.digest_key):null;
-  evidence[doc.tag]={certainty:conf?.confidence??null,agreedType:conf&&JSON.parse(doc.decision_json!).ruleId==='R2'?conf.choice:null,title:digest?.state.title??doc.original_filename,digestLines:digest?.state.sections.map(section=>section.text)??[]};
+ const unavailableTags:string[]=[];const evidence:Record<string,ProposalEvidence>={};for(const doc of await store.documents(run.id)){
+  const conf=doc.confidence_key?(await store.json<{value:ConfidenceOutput}>(doc.confidence_key)).value:null;const context=await correctionContext(doc.original_filename,doc.digest_key,{deleted:async key=>{const row=await env.DB.prepare('SELECT deleted_at FROM artifacts WHERE key=?').bind(key).first<{deleted_at:string|null}>();if(!row)throw new ServerFailure('E_ARTIFACT_MISSING','blocker','The document state ledger is missing.');return row.deleted_at!==null;},read:key=>store.json(key)});
+  if(context.unavailable)unavailableTags.push(doc.tag);
+  evidence[doc.tag]={certainty:conf?.confidence??null,agreedType:conf&&JSON.parse(doc.decision_json!).ruleId==='R2'?conf.choice:null,title:context.title,digestLines:context.digestLines};
  }
  const id=crypto.randomUUID();const proposals=proposeCorrections({correctionId:id,currentThreshold:run.threshold,minimumFiledCount:pack.settings.minimumFiledCount,diff,evidence,types:pack.typeFile.types,folderDecisions:(raw.folderDecisions??[]) as FolderDecision[],renderNotFor:(from,to)=>`${from.name}: review the distinction from ${to.name} using the corrected documents.`});
- const rawKey=await store.put(run.id,null,'correction_input',raw),resultKey=await store.put(run.id,null,'correction_analysis',{diff,proposals});
- await env.DB.prepare('INSERT INTO corrections(id,run_id,actor,created_at,raw_key,result_key,proposals_json) VALUES(?,?,?,?,?,?,?)').bind(id,run.id,actor,now(),rawKey,resultKey,JSON.stringify(proposals)).run();return response({correctionId:id,diff,proposals});
+ const proposalContext={unavailableTags,reason:'source_text_not_retained'};
+ const rawKey=await store.put(run.id,null,'correction_input',raw),resultKey=await store.put(run.id,null,'correction_analysis',{diff,proposals,proposalContext});
+ await env.DB.prepare('INSERT INTO corrections(id,run_id,actor,created_at,raw_key,result_key,proposals_json) VALUES(?,?,?,?,?,?,?)').bind(id,run.id,actor,now(),rawKey,resultKey,JSON.stringify(proposals)).run();return response({correctionId:id,diff,proposals,proposalContext});
 }
 export async function handle(request:Request,env:Env):Promise<Response>{
  try{

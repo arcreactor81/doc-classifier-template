@@ -15,3 +15,11 @@ The public template keeps calls disabled, workers.dev enabled and preview URLs d
 ## Release verification
 
 Before claiming the browser path works, use a fresh account to verify secure key prompts, independent resource creation, migrations, the Workflow binding, workers.dev routing, Access sign-in/denial and all Health blockers. No automatic activation of model calls is part of this test. The repository must be public for other owners to use its Deploy button; changing visibility is a separate owner-authorized release action.
+
+## Current classification readiness
+
+Local tokenizers are not required. A project must explicitly select untrimmed-structured-state-v2 and supply valid definitions, model configuration and verified pricing. Usage counts arrive in vendor responses. The website records spending limits or an acknowledged unlimited choice for each run; activation remains separate. Full source-text-containing state is deleted on user closure. Live validation of the changed confidence input and fresh-account deployment acceptance remain outstanding.
+
+## Runtime language review
+
+Reviewed 2026-09-22: Cloudflare announced [Python Workers general availability](https://blog.cloudflare.com/python-workers-ga/) on 2026-09-21. The project retains TypeScript because no required capability needs Python, and extraction must continue in the browser with originals kept on the user's machine. General availability alone is not a reason to migrate the existing Worker or browser implementation.

@@ -116,3 +116,17 @@ Private implementation passed 181 tests, both TypeScript checks, production UI b
 Public release copy review: the original snapshot's open item for exact request tokenization and a pre-upload cost bound is superseded by monitored per-run spending. The remaining tokenizer task is solely the official Jev implementation for the unchanged 6,000-token digest. New runs record their own budget decision; a mandatory project-pack budget is no longer a readiness requirement. Historical design excerpts above are read together with the latest DESIGN amendment.
 
 Generic starter correction: Batch enqueued-token allowance is explicitly null (unknown), matching the validator's optional throughput contract. Missing account throughput does not block classification setup. No model or extraction setting changed.
+
+## Full structured state and response usage (2026-09-22)
+
+The current policy untrimmed-structured-state-v2 replaces the former 6,000-token digest and local tokenizer dependency. Full extracted text and outline reach the confidence check; counts come from vendor responses. Pre-response counts remain unknown, missing usage never means free, and existing per-run monitored limits still apply. Provider context rejection fails explicitly without shortening or changing the request.
+
+Full-state artifacts are marked as source text and deleted on user-driven closure. Corrections disclose unavailable example excerpts instead of reconstructing them. Existing classification rules, raw-response-first accounting and local-only original documents remain binding. The unsent tokenizer request is archived. No paid validation or accuracy result is claimed for this changed input.
+
+Implementation verification passed 188 tests, both TypeScript checks and production UI build. Browser verification passed 8 UI unit checks, 12 budget display/privacy checks and 14 confirmation/upload checks, using real local preparation without tokenizer interception and fixture APIs without vendor calls. This public export is independently checked before release.
+
+Reviewed [Python Workers GA](https://blog.cloudflare.com/python-workers-ga/) on 2026-09-22; retained TypeScript because no required feature needs Python and original extraction belongs in the browser. Fresh-account deployment acceptance and authorized live validation remain outstanding.
+
+Release integration review found and fixed the confidence adapter rejecting the new fullText field. A regression now passes the actual structured-state builder output into request construction and checks exact preservation plus rejection of malformed/extra fields. The final export gate is rerun after this fix.
+
+Final sanitized export verification: 189 tests passed, both TypeScript checks passed and the production UI build passed. No deployment or vendor inference occurred during verification.

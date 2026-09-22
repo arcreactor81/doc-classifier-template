@@ -31,9 +31,9 @@ Verify that a signed-out browser must sign in and an unauthorized account is den
 
 ## Activate only when Health is ready
 
-Open /health. Resolve its numbered blockers: project definitions, model configuration, verified pricing and the official Jev digest tokenizer. The generic pack deliberately contains no invented taxonomy or spending authorization. A coding harness is optional for editing the project pack; GitHub's web editor can commit changes.
+Open /health. Resolve its numbered blockers: project definitions, model configuration, verified pricing and the explicit full structured-state policy. The generic pack deliberately contains no invented taxonomy or spending authorization. A coding harness is optional for editing the project pack; GitHub's web editor can commit changes.
 
-Supplying keys does not activate inference. After all other blockers are resolved and spending is approved, change MODEL_CALLS_ENABLED to true in the repository and commit. Do not interpret a successful deployment as successful model validation. The current release still has an unverified tokenizer blocker.
+Supplying keys does not activate inference. After all other blockers are resolved and spending is approved, change MODEL_CALLS_ENABLED to true in the repository and commit. Do not interpret a successful deployment as successful model validation. The current release does not require a local tokenizer.
 
 ## Updates and troubleshooting
 
@@ -42,5 +42,4 @@ Commit changes through your repository; Workers Builds redeploys the committed r
 If setup stops before creating resources, check Cloudflare service/billing permissions in its dashboard. If migrations fail, leave inference disabled and inspect the build log. If Health reports an unexpected binding or secret, repair that binding rather than replacing a vendor or weakening validation.
 
 Cloudflare documents the [Deploy button](https://developers.cloudflare.com/workers/platform/deploy-buttons/), [Worker Access controls](https://developers.cloudflare.com/workers/configuration/cloudflare-access/), [Workflow deployment](https://developers.cloudflare.com/workflows/get-started/guide/) and [build image version selection](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/). Checked 2026-09-22. The button does not promise automatic Access policy creation; the dashboard steps above remain necessary.
-
-Spending limits are selected for each run in the website: combined, OpenAI, TypeSafe, or a combination. Running without limits requires an explicit warning acknowledgement. In-flight calls and submitted batches can exceed a monitored threshold before usage arrives. See [run spending](run-spending.md).
+At each run, choose USD limits for both vendors combined, OpenAI, TypeSafe, or any combination. Running without limits requires an explicit warning acknowledgement. This choice needs no Git edit. Costs are recorded from returned usage; outstanding calls and submitted Batch work may exceed the limit before accounting arrives.

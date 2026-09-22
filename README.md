@@ -6,7 +6,7 @@ Read [DESIGN.md](DESIGN.md) before changing behavior and [HANDOFF.md](HANDOFF.md
 
 ## Current status
 
-The generic project is intentionally unconfigured. An empty taxonomy, unavailable official Jev digest tokenizer and disabled model calls must produce NOT READY. Each run asks for its own spending limits or explicit acknowledgement of unlimited spending. Test success does not mean the system is ready for live classification. No paid model inference has been used to validate the implementation.
+The generic project is intentionally unconfigured. An empty taxonomy or disabled model calls must produce NOT READY. Local tokenizers are not required; actual usage comes from vendor responses. Each run asks for its own spending limits or explicit acknowledgement of unlimited spending. Test success does not mean the system is ready for live classification. No paid model inference has been used to validate the implementation.
 
 ## Development
 
@@ -28,13 +28,13 @@ Browser originals remain on the user's machine. Local extraction state uses Inde
 
 Follow the [browser-only setup](docs/browser-deployment.md) to create your own copy on a Cloudflare workers.dev address. No custom domain or local installation is required. Cloudflare provisions storage and prompts for your keys; protect the Worker through its Access dashboard. Model calls start disabled.
 
-Deployment success is separate from classification readiness. The generic project requires your definitions, verified prices and the official Jev digest tokenizer; /health lists blockers. The fresh-account button walkthrough has not yet been acceptance-tested. [Deployment maintenance](docs/deployment.md) describes build gates and release checks.
+Deployment success is separate from classification readiness. The generic project requires your definitions, verified prices and the explicit full structured-state policy; /health lists blockers. The fresh-account button walkthrough has not yet been acceptance-tested. [Deployment maintenance](docs/deployment.md) describes build gates and release checks.
 
 ## Structure
 
 - core/config: validated project packs and type identity.
 - core/extraction and core/local: browser parsers, workers and resumable local state.
-- core/digest: deterministic structural selection and verbatim heading verification.
+- core/digest: full structured-state construction, historical digest support and verbatim heading verification.
 - core/vendors: request construction, strict response validation and bounded transports.
 - core/domain: the filing rule table.
 - core/cost: integer spending arithmetic and audited overrides.

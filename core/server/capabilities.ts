@@ -1,7 +1,7 @@
-import type { DigestTokenCodec } from '../digest/digest.ts';
+
 import type { ProjectPack } from '../config/project.ts';
 import { ServerFailure } from './errors.ts';
-export { codecFor } from '../local/tokenizers.ts';
+
 export type Pricing=ProjectPack['prices'];
 export function pricingFor(pack:ProjectPack,mode:'interactive'|'batch'):Pricing['interactive']{
  const value=(pack as ProjectPack&{prices?:Pricing}).prices;

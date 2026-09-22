@@ -11,7 +11,6 @@
   },
   "structuralVocabulary": [],
   "settings": {
-    "digestBudget": 6000,
     "readerEffort": "low",
     "readerMaxOutputTokens": 16384,
     "recoveryMaxOutputTokens": 8192,
@@ -24,7 +23,8 @@
       "maxHeadingCharacters": 120,
       "topPageFraction": 0.2,
       "gapRatio": 1.5
-    }
+    },
+    "confidenceStatePolicy": "untrimmed-structured-state-v2"
   },
   "pins": {
     "confidence": {
@@ -51,10 +51,6 @@
     "approvedBy": null,
     "approvedAt": null,
     "reason": null
-  },
-  "tokenizers": {
-    "confidence": null,
-    "reader": null
   },
   "limits": {
     "readerRequestsPerMinute": null,

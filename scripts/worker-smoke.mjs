@@ -8,7 +8,8 @@ const body = await health.json();
 assert.equal(body.status, 'NOT READY');
 assert.equal(body.vendorStatus, 'not_contacted');
 assert.equal(body.modelCallsEnabled, false);
-assert.ok(body.blockers.some(x => x.code === 'E_TOKENIZER_UNVERIFIED'));
+assert.ok(!body.blockers.some(x => ['E_TOKENIZER_UNVERIFIED', 'E_TOKENIZER_SPEC'].includes(x.code)));
+assert.ok(body.blockers.some(x => x.code === 'E_TYPE_FILE'));
 assert.ok(!body.blockers.some(x => x.code === 'E_STORAGE_D1' || x.code === 'E_STORAGE_R2'));
 total++;
 for (const [path, method] of [['/api/runs', 'GET'], ['/api/runs', 'POST'], ['/api/kill', 'POST']]) {

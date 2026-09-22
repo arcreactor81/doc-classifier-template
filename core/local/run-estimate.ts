@@ -10,9 +10,9 @@ export function estimatePreparedRun(documents:readonly QuoteDocument[],pack:Proj
  const known=counts.every((count):count is number=>count!==null);
  let seconds:number|null=null;
  if(known){
-  if(counts.some(count=>!Number.isSafeInteger(count)||count<0))throw new Error(uiCopy.tokenizerUnavailable);
+  if(counts.some(count=>!Number.isSafeInteger(count)||count<0))throw new Error(uiCopy.invalidTokenCount);
   const batchTokens=counts.reduce((sum,count)=>sum+count,0),readerTokens=batchTokens+active.length*pack.settings.readerMaxOutputTokens;
-  if(!Number.isSafeInteger(readerTokens))throw new Error(uiCopy.tokenizerUnavailable);
+  if(!Number.isSafeInteger(readerTokens))throw new Error(uiCopy.invalidTokenCount);
   if(mode==='batch'&&pack.limits.readerBatchEnqueuedTokens!==null&&batchTokens>pack.limits.readerBatchEnqueuedTokens)throw new Error(uiCopy.batchCapacityExceeded);
   seconds=projectInteractiveSeconds(active.length,readerTokens,pack.limits);
  }
