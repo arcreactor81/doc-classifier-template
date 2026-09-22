@@ -142,3 +142,9 @@ Workers fetch now uses manual redirect handling and explicitly rejects redirects
 Health reports recorded vendor history and unknown accounting instead of always saying no vendor was contacted. The UI shows threshold and justification, binds correction listings to the selected manifest/run, clears stale scan state, presents proposed examples/exclusions/types and downloads their exact JSON for Git review. These are proposals, not automatic classification changes. Focused browser checks use fixture APIs; no production corrections are applied.
 
 Final sanitized release gate passed 199 tests, both TypeScript checks and the production UI build. The runtime transport regression used a local loopback server only; no vendor calls occurred in release verification.
+
+## Browser setup guidance and local acceptance coverage (2026-09-22)
+
+The browser deployment guide now distinguishes the deploying owner's cloud setup from website users' sign-in, confirms public template availability, and explains enabling inference only after all other Health blockers are resolved. Fresh-account provisioning, Access sign-in and authenticated API acceptance remain unverified; no local installation is required by the intended owner setup flow.
+
+Added reproducible acceptance scripts. The builder exercise passed 19 checks using actual Chromium origin-private filesystem handles, writes, Web Locks and native moves; its picker is injected and native desktop dialogs remain outside coverage. The correction exercise passed 26 checks using local workerd, D1/R2 and locally signed authentication, covering manifest closure, text deletion, stored corrections and explicit threshold application. Its source records are synthetic, every non-fixture outbound request is denied and it makes no vendor calls. These checks establish local behavior, not live model quality or fresh-account deployment acceptance.
