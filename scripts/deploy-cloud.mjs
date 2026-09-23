@@ -4,8 +4,13 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
-import ts from 'typescript';
-function parse(text){const result=ts.parseConfigFileTextToJson('wrangler.jsonc',text);if(result.error)throw new Error('Invalid Wrangler JSON configuration.');return result.config;}
+import {parse as parseJsonc} from 'jsonc-parser';
+export function parseWranglerConfig(text){
+ const errors=[];
+ const config=parseJsonc(text,errors,{allowTrailingComma:true});
+ if(errors.length||!config||typeof config!=='object'||Array.isArray(config))throw new Error('Invalid Wrangler JSON configuration.');
+ return config;
+}
 function masked(config){
  const value=structuredClone(config);delete value.name;
  for(const binding of value.d1_databases??[]){delete binding.database_id;delete binding.database_name;}
@@ -26,8 +31,8 @@ function main(){
  const commit=git(['rev-parse','HEAD']);
  const changed=git(['status','--porcelain','--untracked-files=all']).split('\n').filter(Boolean);
  if(changed.some(line=>line.slice(3)!=='wrangler.jsonc'))throw new Error('Uncommitted source changes prevent deployment. Commit application changes first.');
- const current=parse(readFileSync('wrangler.jsonc','utf8'));
- validateProvisioningMutation(parse(git(['show','HEAD:wrangler.jsonc'])),current);
+ const current=parseWranglerConfig(readFileSync('wrangler.jsonc','utf8'));
+ validateProvisioningMutation(parseWranglerConfig(git(['show','HEAD:wrangler.jsonc'])),current);
  function command(args){const result=spawnSync(process.execPath,args,{stdio:'inherit',env:{...process.env,CI:'true'}});if(result.error)throw result.error;return result.status??1;}
  // Check committed source before generating any temporary deployment artifact.
  const checked=command(cloudDeployCommands(commit)[0]);if(checked!==0){process.exitCode=checked;return;}

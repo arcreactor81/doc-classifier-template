@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateProvisioningMutation,cloudDeployCommands} from './deploy-cloud.mjs';
+import {validateProvisioningMutation,cloudDeployCommands,parseWranglerConfig} from './deploy-cloud.mjs';
 const base={name:'classifier',workers_dev:true,vars:{MODEL_CALLS_ENABLED:'false'},d1_databases:[{binding:'DB',database_id:'demo',database_name:'db'}],r2_buckets:[{binding:'ARTIFACTS',bucket_name:'artifacts'}],secrets_store_secrets:[{binding:'KEY',store_id:'demo',secret_name:'key'}],workflows:[{binding:'DOCUMENT_WORKFLOW',name:'document',class_name:'DocumentWorkflow'}]};
 test('provisioning may rename resources but cannot activate models',()=>{
  const next=structuredClone(base);next.name='owner-copy';next.d1_databases[0].database_id='real-id';next.secrets_store_secrets[0].store_id='real-store';
@@ -19,3 +19,17 @@ test('cloud deployment gates checks then migrates binding before publishing',()=
 });
 
 test('derived config is used for migrations and deployment without changing command ordering',()=>{const steps=cloudDeployCommands('a'.repeat(40),'/workspace/.wrangler-install-test.jsonc');assert.equal(steps[0][0],'scripts/check.mjs');for(const step of steps.slice(1))assert.equal(step[step.indexOf('--config')+1],'/workspace/.wrangler-install-test.jsonc');assert.equal(steps[1][1],'d1');assert.equal(steps[2][1],'deploy');});
+
+
+test('deployment parses actual JSONC syntax without TypeScript compiler APIs',()=>{
+ const config=parseWranglerConfig(`{ // deployment configuration
+   "name":"classifier", "vars":{"MODEL_CALLS_ENABLED":"false",},
+   "route":"https://example.invalid/a/*", /* preserve URL and comment markers */
+ }`);
+ assert.deepEqual(config,{name:'classifier',vars:{MODEL_CALLS_ENABLED:'false'},route:'https://example.invalid/a/*'});
+});
+test('deployment rejects malformed or non-object configuration instead of recovering it',()=>{
+ for(const text of ['{"name":}', '{"name":"x"', '{} trailing', '', 'null', '[]', '"string"', '{"name":"x",,}']){
+  assert.throws(()=>parseWranglerConfig(text),/Invalid Wrangler JSON configuration/);
+ }
+});
