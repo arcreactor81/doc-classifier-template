@@ -98,3 +98,25 @@ test('reader preserves multiline tabs unicode and literal source quotes through 
  for(const exact of [source,'First\nSecond\t\u201cUnicode caf\u00e9 \u03a9 \u{1F642}\u201d','"quoted"'])assert.deepEqual(decodeReader(withEvidence([exact]),alias,['type_a'],source).verdicts[0].evidence,[exact]);
  for(const changed of ['First Second','Second \u201cUnicode caf\u00e9 \u03a9 \u{1F642}\u201d','"First"','\u201cUnicode cafe \u03a9 \u{1F642}\u201d'])assert.throws(()=>decodeReader(withEvidence([changed]),alias,['type_a'],source),/verbatim/);
 });
+
+test('production Sol preserves the reader contract and validates only its exact returned family',()=>{
+ const sol={...alias,id:'gpt-6-sol'};
+ const options={typeFile:types,text,effort:'low',maxOutputTokens:16384};
+ const current=buildReaderRequest({...options,pin:sol}),historical=buildReaderRequest({...options,pin:alias});
+ assert.deepEqual(JSON.parse(current.body),{...JSON.parse(historical.body),model:'gpt-6-sol'});
+ assert.deepEqual(JSON.parse(batchJsonl([{customId:'1',request:current}])).body,JSON.parse(current.body));
+ for(const returned of ['gpt-6-sol','gpt-6-sol-2026-09-23'])assert.equal(decodeReader(readerBody(returned),sol,['type_a'],text).model,returned);
+ for(const returned of ['gpt-5.6-terra','gpt-6-luna','gpt-6-astra','gpt-6-sol-other','gpt-6-sol-2026-9-23'])assert.throws(()=>decodeReader(readerBody(returned),sol,['type_a'],text),{code:'E_TERRA_PIN_DRIFT',kind:'blocker'});
+ const changed=readerBody('gpt-6-sol');changed.output[0].content[0].text=JSON.stringify({verdicts:[{type_id:'type_a',is_type:true,rationale:'Reason',evidence:['source'],closest_alternative:null}]});
+ assert.throws(()=>decodeReader(changed,sol,['type_a'],text),/verbatim/);
+});
+
+test('production model identities remain role scoped for aliases and dated pins',()=>{
+ for(const id of ['gpt-6-sol','gpt-5.6-terra']){
+  const versioned={...alias,id:id+'-2026-09-23',policy:'versioned' as const};
+  verifyModelPolicy(versioned,versioned.id,'reader');
+  assert.throws(()=>verifyModelPolicy(versioned,id,'reader'),/model/i);
+ }
+ for(const id of ['gpt-6-luna','gpt-5.6-luna','gpt-6-astra'])for(const candidate of [{...alias,id},{...alias,id:id+'-2026-09-23',policy:'versioned' as const}])assert.throws(()=>buildReaderRequest({pin:candidate,typeFile:types,text,effort:'low',maxOutputTokens:16384}),/policy/);
+ for(const id of ['gpt-6-sol','gpt-5.6-terra','gpt-6-luna'])for(const candidate of [{...alias,id},{...alias,id:id+'-2026-09-23',policy:'versioned' as const}])assert.throws(()=>buildRecoveryRequest({pin:candidate,text,effort:'low',maxOutputTokens:8192}),/policy/);
+});

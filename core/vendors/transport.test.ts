@@ -143,3 +143,11 @@ test('only explicit temporary429 hints are shared after raw persistence and call
  const noHint=harness([new Response('{}',{status:429}),ok()]);noHint.deps.observeRetryAfter=async()=>{throw Error('No explicit hint');};await executeVendor(request,policy,noHint.deps,decode);
  const permanent=harness([new Response(JSON.stringify({error:{code:'insufficient_quota'}}),{status:429,headers:{'retry-after':'2'}})]);permanent.deps.observeRetryAfter=async()=>{throw Error('Must not share permanent quota');};await assert.rejects(executeVendor(request,policy,permanent.deps,decode),{code:'E_OPENAI_QUOTA'});
 });
+
+test('approved production Sol retries only identical bytes and rejects Terra responses without fallback',async()=>{
+ const sol={...request,model:'gpt-6-sol',modelPolicy:{...request.modelPolicy,id:'gpt-6-sol'},body:'{"model":"gpt-6-sol","input":"1"}'};
+ const success=new Response(JSON.stringify({model:sol.model,usage:{input_tokens:1,output_tokens:2},value:true}));
+ const h=harness([new Response('Busy',{status:503}),success]);assert.equal((await executeVendor(sol,policy,h.deps,decode)).value,true);
+ assert.deepEqual(h.sent.map(sent=>sent.body),[sol.body,sol.body]);assert.equal(h.logs.at(-1)?.modelReturned,'gpt-6-sol');
+ const drift=harness([ok()]);await assert.rejects(executeVendor(sol,policy,drift.deps,decode),{code:'E_TERRA_PIN_DRIFT',kind:'blocker'});assert.equal(drift.sent.length,1);assert.equal(drift.raw.length,1);
+});

@@ -6,7 +6,7 @@ Edit project.json through Git. Each type requires id, name, what, not_for and ex
 
 Initial implementation settings are threshold 0.90 (stored in D1), low reader effort, and minimum 50 checked filed documents. The confidence-state policy is untrimmed-structured-state-v2: full extracted text and structure, without local token counting or trimming. Other generic extraction and output-cap choices are explicit settings rather than hidden constants.
 
-The template uses Terra/Luna family aliases under its explicit model policy. Jev is versioned. Runtime must retain returned model identities.
+The template selects GPT-6 Sol for the reader and GPT-5.6 Luna for outline recovery under its explicit model policy. Jev is versioned. Runtime retains the returned model identities, and historical Terra configurations remain valid.
 
 Each run records the signed-in person's spending limits or explicit unlimited-spending acknowledgement. No project-pack budget or HANDOFF sign-off is required for that choice. Separate live validation campaigns still need their own authorization. Never enter API key values here.
 

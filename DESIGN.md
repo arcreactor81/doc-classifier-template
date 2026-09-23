@@ -307,3 +307,7 @@ The owner instructed the implementation to drop local token counters and use Jev
 ### Full-text structural-note policy (2026-09-23)
 
 For new runs explicitly configured with untrimmed-structured-state-v2 and full-state-structural-info-v2, retain N_NO_OUTLINE, N_NO_STRUCTURAL_SECTIONS and N_OUTLINE_RECOVERED as informational provenance. Full extracted text remains supplied, so these known heading/outline notes alone do not force review. Other notes still require review; all extraction, vendor, model, schema, evidence and recovery-verification failures still block filing. R1 through R5 agreement, Noul and certainty conditions are unchanged. Historical runs and manifests keep their original rules and decisions; do not relabel them. New project packs must explicitly choose a recognized note policy; only already-frozen historical packs with the setting absent retain all-notes-review-v1.
+
+### Owner-approved reader default (2026-09-23)
+
+The owner approved GPT-6 Sol for new project configurations under `owner_approved_alias`. Accept only its exact named identity or a same-family dated identity, preserving the returned identity. Historical frozen GPT-5.6 Terra configurations remain valid. GPT-5.6 Luna recovery, Jev, prompts, effort, output caps, taxonomy and threshold are unchanged. This supersedes the earlier statement that no Sol alias was authorized; no fallback or historical relabeling is permitted. Independent deployment owners still authorize their own spending and validate their own project.

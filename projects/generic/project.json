@@ -35,9 +35,9 @@
       "policy": "versioned"
     },
     "reader": {
-      "id": "gpt-5.6-terra",
-      "date": "2026-09-22",
-      "reason": "Owner explicitly authorized family-name calls without pins.",
+      "id": "gpt-6-sol",
+      "date": "2026-09-23",
+      "reason": "Owner approved GPT-6 Sol as the reader for new runs; historical configurations remain valid.",
       "policy": "owner_approved_alias"
     },
     "recovery": {
@@ -96,7 +96,7 @@
           }
         },
         "inputNanodollarsPerMillion": "2000000000",
-        "outputNanodollarsPerMillion": "12000000000"
+        "outputNanodollarsPerMillion": "10000000000"
       }
     },
     "batch": {
@@ -132,13 +132,14 @@
           }
         },
         "inputNanodollarsPerMillion": "1000000000",
-        "outputNanodollarsPerMillion": "6000000000"
+        "outputNanodollarsPerMillion": "5000000000"
       }
     },
     "source": [
       "https://developers.openai.com/api/docs/pricing",
-      "https://docs.typesafe.ai/models"
+      "https://docs.typesafe.ai/models",
+      "https://developers.openai.com/api/docs/models/gpt-6-sol"
     ],
-    "verifiedAt": "2026-09-22"
+    "verifiedAt": "2026-09-23"
   }
 }

@@ -75,3 +75,29 @@ test('only frozen historical run loading resolves absent note policy, without mu
  for(const bad of [undefined,null,'future']){frozen.settings.decisionNotePolicy=bad;assert.throws(()=>requireRunProject(frozen),/policy/);}
  assert.equal(runDecisionNotePolicy({}),'all-notes-review-v1');
 });
+
+test('reader pins accept approved Sol and historical Terra but reject unrelated and wrong-role identities',()=>{
+ const errors=(role:string,id:string,policy='owner_approved_alias')=>validateProject({pins:{[role]:{id,policy,date:'2026-09-23',reason:'Owner authorized'}}}).filter(issue=>issue.path==='pins.'+role);
+ for(const id of ['gpt-6-sol','gpt-5.6-terra']){
+  assert.deepEqual(errors('reader',id),[]);
+  assert.deepEqual(errors('reader',id+'-2026-09-23','versioned'),[]);
+ }
+ assert.deepEqual(errors('recovery','gpt-5.6-luna'),[]);
+ assert.deepEqual(errors('confidence','jev-1.13.0','versioned'),[]);
+ for(const [role,ids] of [['reader',['gpt-6-luna','gpt-5.6-luna','gpt-6-astra','gpt-5.6-sol']],['recovery',['gpt-6-sol','gpt-5.6-terra','gpt-6-luna']],['confidence',['gpt-6-sol','gpt-5.6-luna']]] as const)
+  for(const id of ids)for(const [candidate,policy] of [[id,'owner_approved_alias'],[id+'-2026-09-23','versioned']])assert.ok(errors(role,candidate,policy).length,role+': '+candidate);
+ const frozen={...generic,typeFile:types,structuralVocabulary:[],pins:{...generic.pins,reader:{id:'gpt-5.6-terra',date:'2026-09-22',reason:'Historical owner approval',policy:'owner_approved_alias'}}};
+ const before=JSON.stringify(frozen);assert.equal(requireRunProject(frozen).pins.reader.id,'gpt-5.6-terra');assert.equal(JSON.stringify(frozen),before);
+});
+
+test('current generic pack selects approved Sol with verified standard and Batch prices',()=>{
+ assert.equal(generic.pins.reader.id,'gpt-6-sol');assert.equal(generic.pins.reader.date,'2026-09-23');
+ assert.equal(generic.pins.reader.policy,'owner_approved_alias');
+ assert.equal(generic.pins.confidence.id,'jev-1.13.0');assert.equal(generic.pins.recovery.id,'gpt-5.6-luna');
+ assert.equal(generic.settings.readerEffort,'low');assert.equal(generic.settings.readerMaxOutputTokens,16384);assert.equal(generic.settings.recoveryMaxOutputTokens,8192);
+ assert.equal(generic.prices.interactive.reader.inputNanodollarsPerMillion,'2000000000');assert.equal(generic.prices.interactive.reader.outputNanodollarsPerMillion,'10000000000');
+ assert.equal(generic.prices.batch.reader.inputNanodollarsPerMillion,'1000000000');assert.equal(generic.prices.batch.reader.outputNanodollarsPerMillion,'5000000000');
+ assert.equal(generic.prices.verifiedAt,'2026-09-23');assert.ok(generic.prices.source.includes('https://developers.openai.com/api/docs/models/gpt-6-sol'));
+ assert.equal(generic.limits.readerContextTokens,1050000);
+ assert.equal(requireProject({...generic,typeFile:types,structuralVocabulary:[]}).pins.reader.id,'gpt-6-sol');
+});

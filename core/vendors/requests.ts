@@ -23,9 +23,9 @@ function schema(condition: unknown, role: VendorRole, message: string): asserts 
   if (!condition) throw new ValidationFailure(role === 'confidence' ? 'E_JEV_SCHEMA' : role === 'reader' ? 'E_READER_SCHEMA' : 'E_RECOVERY_SCHEMA', 'document', message);
 }
 function validPin(pin: ModelPin, role: VendorRole): void {
-  const alias = role === 'reader' ? 'gpt-5.6-terra' : role === 'recovery' ? 'gpt-5.6-luna' : null;
-  const versioned = role === 'confidence' ? /^jev-\d+\.\d+\.\d+$/ : role === 'reader' ? /^gpt-5\.6-terra-\d{4}-\d{2}-\d{2}$/ : /^gpt-5\.6-luna-\d{4}-\d{2}-\d{2}$/;
-  if (!pin || !(pin.policy === 'versioned' && versioned.test(pin.id)) && !(pin.policy === 'owner_approved_alias' && pin.id === alias)) {
+  const aliases = role === 'reader' ? ['gpt-5.6-terra', 'gpt-6-sol'] : role === 'recovery' ? ['gpt-5.6-luna'] : [];
+  const versioned = role === 'confidence' ? /^jev-\d+\.\d+\.\d+$/ : role === 'reader' ? /^gpt-(?:5\.6-terra|6-sol)-\d{4}-\d{2}-\d{2}$/ : /^gpt-5\.6-luna-\d{4}-\d{2}-\d{2}$/;
+  if (!pin || !(pin.policy === 'versioned' && versioned.test(pin.id)) && !(pin.policy === 'owner_approved_alias' && aliases.includes(pin.id))) {
     throw new ValidationFailure('E_MODEL_POLICY', 'blocker', 'Model policy is not authorized for this role.');
   }
 }

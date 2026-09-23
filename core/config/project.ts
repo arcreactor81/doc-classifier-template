@@ -76,10 +76,10 @@ export function validateProject(value:unknown):ConfigIssue[]{
  else for(const role of ['confidence','reader','recovery']){
   const pin=value.pins[role];
   if(!record(pin)||!nonempty(pin.id)||!nonempty(pin.date)||!nonempty(pin.reason)){issue('pins.'+role,'Record model ID, date and reason.');continue;}
-  const alias=role==='reader'?'gpt-5.6-terra':role==='recovery'?'gpt-5.6-luna':null;
-  const versioned=role==='confidence'?/^jev-\d+\.\d+\.\d+$/.test(pin.id):/^gpt-[a-z0-9.]+(?:-[a-z0-9]+)*-\d{4}-\d{2}-\d{2}$/.test(pin.id);
-  if(!(pin.policy==='versioned'&&versioned)&&!(pin.policy==='owner_approved_alias'&&alias===pin.id))
-   issue('pins.'+role,'Only versioned models or explicitly approved Terra/Luna aliases are permitted.','E_MODEL_POLICY');
+  const aliases=role==='reader'?['gpt-5.6-terra','gpt-6-sol']:role==='recovery'?['gpt-5.6-luna']:[];
+  const versioned=role==='confidence'?/^jev-\d+\.\d+\.\d+$/.test(pin.id):role==='reader'?/^gpt-(?:5\.6-terra|6-sol)-\d{4}-\d{2}-\d{2}$/.test(pin.id):/^gpt-5\.6-luna-\d{4}-\d{2}-\d{2}$/.test(pin.id);
+  if(!(pin.policy==='versioned'&&versioned)&&!(pin.policy==='owner_approved_alias'&&aliases.includes(pin.id)))
+   issue('pins.'+role,'Only versioned models or explicitly approved aliases for this role are permitted.','E_MODEL_POLICY');
  }
  const integerMoney=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9][0-9]*)$/.test(v);
  const positiveRatio=(v:unknown)=>record(v)&&integerMoney(v.numerator)&&integerMoney(v.denominator)&&BigInt(v.numerator)>0n&&BigInt(v.denominator)>0n;
