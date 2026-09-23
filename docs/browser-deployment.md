@@ -4,7 +4,7 @@ Each owner gets a separate repository, Worker, database, bucket and vendor keys.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/arcreactor81/doc-classifier-template)
 
-The source template is public. The browser deployment path is implemented, but a fresh-account walkthrough has not yet been acceptance-tested.
+The source template is public. A fresh-copy deployment has passed resource provisioning, build and deployment checks, and unsigned production API requests remain locked. Live sign-in and unauthorized-user checks are still pending; this is not yet a completed fresh-account walkthrough.
 
 ## Before starting
 
@@ -23,14 +23,16 @@ The template declares D1, R2 and Secrets Store bindings for the setup service. T
 
 ## Enable sign-in
 
+**The deployment checkbox is not the final check.** In the verified fresh-copy deployment, **Protect with Cloudflare Access** created protection for preview URLs only. Preview protection does not protect the production address you give people. Check the Worker's Access settings and select **All traffic**, even if you selected the checkbox during deployment.
+
 1. On the app's setup screen, choose **Enable sign-in**. This opens Cloudflare in a new tab.
 2. Under **Workers & Pages**, select the Worker you just deployed, then open **Access**.
-3. Choose **Protect this Worker behind Access**, select **All traffic**, choose the people allowed to sign in, and select **Apply Access**. Use an existing restricted policy or configure one for the intended people; detailed rules are available in Zero Trust. This protects the supplied workers.dev address without buying a domain.
+3. Choose **Protect this Worker behind Access** (or manage its existing protection), select **All traffic**, choose the people allowed to sign in, and select **Apply Access**. Use an existing restricted policy or configure one for the intended people; detailed rules are available in Zero Trust. This protects the supplied workers.dev address without buying a domain.
 4. Return to the app and choose **Check sign-in**. The page reloads so Cloudflare can ask you to sign in.
 
-No audience identifier, team hostname, API token, source edit or redeployment is needed to connect sign-in in a new copy. The app uses the authenticated identity supplied by Cloudflare. If the deployment form's **Protect with Cloudflare Access** option already configured protection, sign in and continue; the setup card is shown only when the app has no authenticated identity.
+No audience identifier, team hostname, API token, source edit or redeployment is needed to connect sign-in in a new copy. The app uses the authenticated identity supplied by Cloudflare. If production **All traffic** protection is already enabled, sign in and continue. The setup card is shown when the app has no authenticated identity; preview-only protection leaves the production app on that card.
 
-Verify that a signed-out browser must sign in and an unauthorized account is denied. An allowed person should reach the workspace. Missing sign-in, missing user identity or an identity lookup failure keeps document operations locked. Seeing the setup page is not proof that authentication is configured.
+Verify the production workers.dev address in a signed-out browser: it must ask for sign-in, and an unauthorized account must be denied. An allowed person should reach the workspace and open **Runs** without an authentication error. **Health** may still show **NOT READY** for missing document types or disabled model calls; these are separate setup steps. Missing sign-in, missing user identity or an identity lookup failure keeps document operations locked. Seeing the setup page is not proof that authentication is configured.
 
 ### Existing installations
 
@@ -52,9 +54,11 @@ Cloudflare documents the [Deploy button](https://developers.cloudflare.com/worke
 
 At each run, choose USD limits for both vendors combined, OpenAI, TypeSafe, or any combination. Running without limits requires an explicit warning acknowledgement. This choice needs no Git edit. Costs are recorded from returned usage; outstanding calls and submitted Batch work may exceed the limit before accounting arrives.
 
-## Fresh-owner acceptance still to perform
+## Deployment verification and remaining acceptance
 
-Use a new repository and independent resources. Confirm the setup creates D1, R2 and both Secrets Store bindings, records the provisioned names/IDs in the clone, and completes migrations before deployment. Confirm the Workflow appears with the deployed class. The build gate deliberately rejects uncommitted application changes; resource identity rewrites alone are allowed. New copies derive an installation-specific Workflow name from the configured Worker name and binding. Existing custom names are preserved. Keep installation configuration when updating application code; do not replace an existing Workflow name with the new-install marker.
+Verified on a fresh copy on 2026-09-23: a new repository, separate D1/R2, both Secrets Store bindings, Workflow provisioning, migrations and deployment succeeded; the public setup page loaded and unsigned Runs requests returned 401. No model calls were made. Production Access in that attempt was still preview-only, so authenticated acceptance is not yet claimed.
+
+For another installation, use a new repository and independent resources. Confirm the setup creates D1, R2 and both Secrets Store bindings, records the provisioned names/IDs in the clone, and completes migrations before deployment. Confirm the Workflow appears with the deployed class. The build gate deliberately rejects uncommitted application changes; resource identity rewrites alone are allowed. New copies derive an installation-specific Workflow name from the configured Worker name and binding. Existing custom names are preserved. Keep installation configuration when updating application code; do not replace an existing Workflow name with the new-install marker.
 
 After enabling sign-in, check denial for unauthorized people and a successful signed-in Runs request without an authentication-settings commit. A login page or visible website alone does not verify that the app received a trusted identity. Then define the project types in projects/generic/project.json through the web editor, finish Health setup, and explicitly activate. These browser checks remain unverified on a fresh account; passing repository tests does not replace them.
 

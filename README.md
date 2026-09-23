@@ -42,7 +42,9 @@ Browser originals remain on the user's machine. Local extraction state uses Inde
 
 Follow the [browser-only setup](docs/browser-deployment.md) to create your own copy on a Cloudflare workers.dev address. No custom domain or local installation is required. Cloudflare provisions storage and prompts for your keys. New copies then guide you to enable sign-in and choose who may use the app through Cloudflare. You do not enter an audience identifier or team hostname. Document operations remain locked until sign-in works, and model calls start disabled. Existing installations retain their configured authentication.
 
-Deployment success is separate from classification readiness. The generic project requires your definitions, verified prices and the explicit full structured-state policy; /health lists blockers. The fresh-account button walkthrough has not yet been acceptance-tested. [Deployment maintenance](docs/deployment.md) describes build gates and release checks.
+**After deployment, check production sign-in:** the setup form's **Protect with Cloudflare Access** checkbox may protect preview URLs only. Open **Workers & Pages ? your Worker ? Access**, select **All traffic**, and apply an allow policy for the intended people. Then return to the app and choose **Check sign-in**. No AUD, team hostname or code change is required. See the [sign-in walkthrough](docs/browser-deployment.md#enable-sign-in).
+
+Deployment success is separate from classification readiness. The generic project requires your definitions, verified prices and the explicit full structured-state policy; /health lists blockers. Fresh-copy provisioning and locked production APIs have been verified. Live signed-in and unauthorized-user acceptance remain to be completed; a fresh-account walkthrough is not yet claimed. [Deployment maintenance](docs/deployment.md) describes build gates and release checks.
 
 ## Structure
 
