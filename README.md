@@ -1,6 +1,6 @@
 # Document classifier
 
-A generic document classification system. Chrome or Edge extracts originals locally. The cloud receives text and outline, runs an independent confidence check and reader, and applies deterministic filing rules. The system produces a results file (currently called a manifest) describing where each document belongs; the browser uses it to build folders from the user's originals. Human corrections are folder moves and produce proposals, never automatic taxonomy changes.
+A generic document classification system. Chrome or Edge extracts originals locally. The cloud receives text and outline, runs an independent confidence check and reader, and applies deterministic filing rules. The system produces a results file describing where each document belongs; the browser uses it to build folders from the user's originals. Human corrections are folder moves and produce proposals, never automatic taxonomy changes.
 
 Read [DESIGN.md](DESIGN.md) before changing behavior and [HANDOFF.md](HANDOFF.md) for verified facts, implementation decisions and open issues. [AGENTS.md](AGENTS.md) defines repository rules. Project-specific definitions belong in projects/<name>/.
 
@@ -55,7 +55,7 @@ Deployment success is separate from classification readiness. The generic projec
 - core/domain: the filing rule table.
 - core/cost: integer spending arithmetic and audited overrides.
 - core/server and migrations: Worker API, document Workflow and durable records.
-- core/builder: manifest-driven browser copies and review sidecars.
+- core/builder: browser copies driven by the results file, with review notes.
 - core/correction: move comparison and human-approved proposals.
 - ui/app: application; ui/reference: visual reference only.
 - projects/generic: initial project pack, awaiting owner configuration.

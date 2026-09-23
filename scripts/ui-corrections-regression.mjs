@@ -16,7 +16,7 @@ try{
  let responseMode='failure',checks=0,releaseFirstResponse;
  const firstResponse=new Promise(resolve=>{releaseFirstResponse=resolve;});
  const failure={code:'E_CORRECTION_AMBIGUOUS_IDENTITY',headline:'A document appears more than once in the corrected tree.',action:'Keep one copy of each tagged document, then choose the whole output folder again.'};
- const result={correctionId:'correction1',diff:{deleted:[]},proposals:{filedCheck:{wrong:0,checked:1,status:'insufficient_sample'},raise:null,lower:null,moves:[],unresolvedFolders:[],unmatched:[],examples:[],notFor:[],newTypes:[]}};
+ const result={correctionId:'correction1',diff:{deleted:[]},proposals:{filedCheck:{wrong:0,checked:0,status:'insufficient_sample'},raise:null,lower:null,moves:[],unresolvedFolders:[],unmatched:[],examples:[],notFor:[],newTypes:[]}};
  await page.addInitScript(()=>{
   window.cancelPicker=false;
   window.showDirectoryPicker=async()=>{
@@ -39,14 +39,14 @@ try{
  const manifest={runId:'run1',entries:[{fingerprint:'a'.repeat(64),tag:'r1-1',originalFilename:'document.pdf',destinationFolder:'type_a',rule:'R1'}]};
  async function loadManifest(){
   const chooser=page.waitForEvent('filechooser');
-  await page.getByRole('button',{name:'Choose manifest JSON',exact:true}).click();
+  await page.getByRole('button',{name:'Choose results file',exact:true}).click();
   await(await chooser).setFiles({name:'manifest.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(manifest))});
-  await expect(page.getByRole('button',{name:'Choose manifest JSON',exact:true})).toBeEnabled();
+  await expect(page.getByRole('button',{name:'Choose results file',exact:true})).toBeEnabled();
  }
- const tree=page.getByRole('button',{name:'Choose corrected tree',exact:true});
+ const tree=page.getByRole('button',{name:'Choose corrected output folder',exact:true});
  const review=page.getByRole('button',{name:'Review corrections',exact:true});
  const alerts=page.getByRole('alert');
- async function scan(){await tree.click();await expect(tree).toBeEnabled();await expect(page.getByText('Files in corrected tree: 1',{exact:true})).toBeVisible();}
+ async function scan(){await tree.click();await expect(tree).toBeEnabled();await expect(page.getByText('Documents in the corrected folder: 1',{exact:true})).toBeVisible();}
  async function failReview(){await review.click();await expect(review).toBeEnabled();await expect(alerts.getByRole('heading',{name:failure.headline,exact:true})).toBeVisible();}
  await loadManifest();await scan();await page.getByLabel('type_a',{exact:true}).check();
  await review.click();await expect(review).toBeDisabled();
@@ -79,6 +79,7 @@ try{
  await expect(page.getByRole('heading',{name:'Proposals for Git review',exact:true})).toBeVisible();
  await expect(alerts).toHaveCount(0);checks++;
  assert.equal(await review.evaluate(button=>Boolean(button.nextElementSibling?.nextElementSibling?.querySelector('.proposal-review'))),true);checks++;
+ await expect(page.getByText('No automatically filed documents were confirmed in this review. Folder moves are still recorded; this does not establish filing accuracy.',{exact:true})).toBeVisible();checks++;
  assert.equal(posts.length,5);checks++;
  assert.deepEqual(pageErrors,[]);checks++;
  console.log(`Correction action-error browser regression: ${checks} checks passed; synthetic picker/API only, no live mutations.`);

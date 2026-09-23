@@ -8,14 +8,14 @@ import { LocalRunStore } from '../../core/local/state.ts';
 import { readRetrySession, assertRetryComplete } from '../../core/local/retry.ts';
 
 interface Quote { quoteId: string; typeVersion: string; mode: string }
-interface Options { ready: boolean; request<T>(path: string, body?: unknown): Promise<T>; onError(error: unknown): void; onRun(id: string): void }
+interface Options { ready: boolean; request<T>(path: string, body?: unknown): Promise<T>; onError(error: unknown, host?: HTMLElement): void; onRun(id: string): void }
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] => { const node = document.createElement(tag); if (text) node.textContent = text; return node; };
 /** Controls only: requests run solely after an explicit user click and successful verified preflight. */
 export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, options: Options): void {
   let modeSettings:ModeSettings|null=null, selectedCount:number|null=null, userMode:RunMode|null=null, selectionEpoch=0;
   mode.value='';
   let quote: LocalEstimate | null = null, quotedLocalId = '', quotedDocuments = '', quotedPack = '', quotedType = '', busy = false;
-  const output = element('div'), notice = element('p', c.uploadUnavailable);
+  const output = element('div'), feedback=element('div'), notice = element('p', c.uploadUnavailable);
   const budgetBox=element('fieldset');budgetBox.className='budget-controls';budgetBox.append(element('legend',c.budgetTitle));
   const budgetMode=element('select');budgetMode.id='budget-mode';const budgetModeLabel=element('label',c.budgetMode);budgetModeLabel.htmlFor=budgetMode.id;
   for(const [value,text]of [['limited',c.budgetLimited],['unlimited',c.budgetUnlimited]]){const item=element('option',text);item.value=value;budgetMode.append(item);}
@@ -29,7 +29,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
   const session = () => localStorage.getItem('local-extraction-run');
   function action(label: string, work: () => Promise<void>): HTMLButtonElement {
     const button = element('button', label); button.type = 'button';
-    button.onclick = () => { busy = true; notice.textContent=c.loading; update(); void work().catch(options.onError).finally(() => { busy = false; update(); }); };
+    button.onclick = () => { feedback.replaceChildren(); busy = true; notice.textContent=c.loading; update(); void work().catch(error=>options.onError(error,feedback)).finally(() => { busy = false; update(); }); };
     return button;
   }
   async function prepared(localId: string) {
@@ -99,7 +99,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
     budgetBox.disabled=busy;warning.hidden=budgetMode.value!=='unlimited';limitFields.hidden=budgetMode.value==='unlimited';mode.disabled=busy;
     resume.hidden = !session() || !localStorage.getItem('server-run:' + session()); resume.disabled = busy || !options.ready;
     notice.hidden = !!quote && !busy;
-    if(!busy&&!quote)notice.textContent=c.uploadUnavailable;
+    if(!busy&&!quote)notice.textContent=options.ready?c.preflightReady:c.uploadUnavailable;
   }
   function invalidate(): void { quote = null; quotedLocalId = ''; quotedDocuments = ''; quotedPack = ''; quotedType = ''; acknowledge.checked = false; output.replaceChildren(); update(); }
   mode.addEventListener('change',()=>{userMode=mode.value as RunMode;invalidate();});budgetMode.addEventListener('change',()=>{acknowledge.checked=false;update();});acknowledge.addEventListener('change',update);for(const input of Object.values(inputs))input.addEventListener('input',update);
@@ -108,6 +108,6 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
   const counted=(event:Event)=>{if(!host.isConnected){window.removeEventListener('local-extraction-count',counted);return;}selectedCount=(event as CustomEvent<number>).detail;if(modeSettings)mode.value=suggestRunMode(modeSettings,selectedCount,userMode);invalidate();};
   window.addEventListener('local-extraction-count',counted);
   const actions = element('div'); actions.className = 'actions'; actions.append(estimate, confirm, resume);
-  host.append(output, budgetBox, notice, actions); update();
+  notice.setAttribute('role','status');host.append(budgetBox, actions, notice, feedback, output); update();
   const initialEpoch=selectionEpoch;void options.request('/api/project').then(raw=>{const settings=(raw as {settings?:ModeSettings}|null)?.settings;if(!settings)throw new Error(c.setupDetail);suggestRunMode(settings,null);modeSettings=settings;if(initialEpoch===selectionEpoch)mode.value=suggestRunMode(modeSettings,selectedCount,userMode);else if(!userMode)mode.value=suggestRunMode(modeSettings,selectedCount);}).catch(options.onError);
 }

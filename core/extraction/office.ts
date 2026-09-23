@@ -177,7 +177,17 @@ export function parsePptxParts(parts: ReadonlyMap<string, string>): ParsedDocume
   const base = 'ppt/presentation.xml';
   const presentation = required(parts, base);
   const rels = relations(parts, base);
-  const ids = all(presentation, 'sldId');
+  const presentationNamespaces = new Set([
+    'http://schemas.openxmlformats.org/presentationml/2006/main',
+    'http://purl.oclc.org/ooxml/presentationml/main',
+  ]);
+  const root = presentation.find(node => tag(node) === 'presentation' && presentationNamespaces.has(namespaces.get(node) ?? ''));
+  if (!root) throw new Error('The presentation root is missing or unsupported.');
+  const presentationNamespace = namespaces.get(root);
+  // Section extensions also contain sldId elements, but only this direct list orders slides.
+  const ids = children(root)
+    .filter(node => tag(node) === 'sldIdLst' && namespaces.get(node) === presentationNamespace)
+    .flatMap(node => children(node).filter(item => tag(item) === 'sldId' && namespaces.get(item) === presentationNamespace));
   if (!ids.length) throw new Error('The presentation contains no slides.');
   const acc = new Accumulator();
   for (const [index, id] of ids.entries()) {

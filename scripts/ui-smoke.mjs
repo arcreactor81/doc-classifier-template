@@ -1,4 +1,4 @@
-﻿import { chromium } from '@playwright/test';
+import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 const browser=await chromium.launch({channel:'msedge',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1050}});
@@ -6,16 +6,16 @@ const errors=[];page.on('pageerror',error=>errors.push(error.message));
 // Only readiness is supplied as a fixture. No vendor, extraction, run or correction success is simulated.
 await page.route('**/api/health',route=>route.fulfill({json:{status:'NOT READY',blockers:[{code:'E_PROJECT_CONFIG',headline:'Project configuration is incomplete.',action:'Commit the project configuration in Git and deploy it.'}],versions:{},project:{},modelCallsEnabled:false,textHeldRuns:0}}));
 await page.goto('http://127.0.0.1:5173/');
-await page.getByRole('heading',{name:'A considered place for every document.'}).waitFor();
+await page.getByRole('heading',{name:'Make sense of every document.'}).waitFor();
 assert.equal(await page.getByRole('button',{name:'Confirm and start run'}).isDisabled(),true);
 await page.screenshot({path:'.local/qa/home-light.png',fullPage:true});
 await page.getByRole('button',{name:'Change colour theme'}).click();
 await page.getByRole('link',{name:'Build folders',exact:true}).click();
-await page.getByRole('heading',{name:'Bring the decisions back to your folders.'}).waitFor();
+await page.getByRole('heading',{name:'Turn results into real folders.'}).waitFor();
 assert.equal(await page.getByLabel('Maximum path length').inputValue(),'260');
 await page.screenshot({path:'.local/qa/build-dark.png',fullPage:true});
 await page.getByRole('link',{name:'Corrections',exact:true}).click();
-await page.getByRole('heading',{name:'Your folder moves are the feedback.'}).waitFor();
+await page.getByRole('heading',{name:'Your judgment makes the difference.'}).waitFor();
 await page.getByRole('link',{name:'How it works',exact:true}).click();
 await page.getByRole('heading',{name:'Two opinions. One set of rules. Your decision when it matters.'}).waitFor();
 await page.setViewportSize({width:390,height:844});

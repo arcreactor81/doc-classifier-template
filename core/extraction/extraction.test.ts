@@ -38,9 +38,9 @@ test('DOCX preserves heading styles, ordered paragraphs, table headers and page 
 });
 test('PPTX uses presentation relationship order and title placeholders', () => {
   const parts = new Map([
-    ['ppt/presentation.xml', '<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst><p:sldId r:id="rId2"/><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>'],
+    ['ppt/presentation.xml', '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="urn:r"><p:sldIdLst><p:sldId r:id="rId2"/><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>'],
     ['ppt/_rels/presentation.xml.rels', '<Relationships><Relationship Id="rId1" Target="slides/slide1.xml"/><Relationship Id="rId2" Target="slides/slide2.xml"/></Relationships>'],
-    ...[1, 2].map(n => [`ppt/slides/slide${n}.xml`, `<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>${word(n)}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`] as [string, string]),
+    ...[1, 2].map(n => [`ppt/slides/slide${n}.xml`, `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="urn:a"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>${word(n)}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`] as [string, string]),
   ]);
   const result = parsePptxParts(parts);
   assert.deepEqual(result.outline.headings.map(item => item.text), [word(2), word(1)]);
@@ -55,9 +55,9 @@ test('missing required XML and invalid XML fail explicitly', () => {
 test('PPTX relationship IDs remain distinct from numeric slide IDs regardless of attribute order', () => {
   for (const attributes of ['id="256" r:id="rId1"', 'r:id="rId1" id="256"']) {
     const parts = new Map([
-      ['ppt/presentation.xml', `<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst><p:sldId ${attributes}/></p:sldIdLst></p:presentation>`],
+      ['ppt/presentation.xml', `<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="urn:r"><p:sldIdLst><p:sldId ${attributes}/></p:sldIdLst></p:presentation>`],
       ['ppt/_rels/presentation.xml.rels', '<Relationships><Relationship Id="rId1" Target="slides/slide1.xml"/></Relationships>'],
-      ['ppt/slides/slide1.xml', `<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>${word(0)}</a:t></a:r></a:p></p:txBody></p:sp></p:sld>`],
+      ['ppt/slides/slide1.xml', `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="urn:a"><p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>${word(0)}</a:t></a:r></a:p></p:txBody></p:sp></p:sld>`],
     ]);
     assert.equal(parsePptxParts(parts).outline.headings[0].text, word(0));
   }
@@ -66,9 +66,9 @@ test('PPTX relationship IDs remain distinct from numeric slide IDs regardless of
 test('PPTX title associations stop at slide boundaries while tables and notes retain order',()=>{
  const paragraph=(text:string)=>'<a:p><a:r><a:t>'+text+'</a:t></a:r></a:p>';
  const shape=(text:string,title=false)=>'<p:sp>'+(title?'<p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>':'')+'<p:txBody>'+paragraph(text)+'</p:txBody></p:sp>';
- const slide=(body:string)=>'<p:sld xmlns:p="urn:p" xmlns:a="urn:a">'+body+'</p:sld>';
+ const slide=(body:string)=>'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="urn:a">'+body+'</p:sld>';
  const parts=new Map([
- ['ppt/presentation.xml','<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst><p:sldId r:id="a"/><p:sldId r:id="b"/></p:sldIdLst></p:presentation>'],
+ ['ppt/presentation.xml','<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="urn:r"><p:sldIdLst><p:sldId r:id="a"/><p:sldId r:id="b"/></p:sldIdLst></p:presentation>'],
  ['ppt/_rels/presentation.xml.rels','<Relationships><Relationship Id="a" Target="slides/one.xml"/><Relationship Id="b" Target="slides/two.xml"/></Relationships>'],
  ['ppt/slides/one.xml',slide(shape(word(0),true)+shape(word(1)))],
  ['ppt/slides/two.xml',slide(shape(word(2))+'<a:tbl><a:tr><a:tc><a:txBody>'+paragraph(word(3))+'</a:txBody></a:tc></a:tr><a:tr><a:tc><a:txBody>'+paragraph(word(4))+'</a:txBody></a:tc></a:tr></a:tbl>')],
@@ -122,4 +122,32 @@ test('AlternateContent rejects missing or empty mandatory Choice Requires',()=>{
   const xml='<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><mc:AlternateContent><mc:Choice'+attribute+'><w:t>ambiguous choice</w:t></mc:Choice><mc:Fallback><w:t>fallback copy</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p></w:body></w:document>';
   assert.throws(()=>parseDocxParts(new Map([['word/document.xml',xml]])),/Requires/i);
  }
+});
+
+
+for (const presentationNamespace of [
+  'http://schemas.openxmlformats.org/presentationml/2006/main',
+  'http://purl.oclc.org/ooxml/presentationml/main',
+]) {
+  test(`PPTX reads only the direct slide list, excluding section references (${presentationNamespace})`, () => {
+    const relationshipNamespace = presentationNamespace.includes('purl.oclc.org')
+      ? 'http://purl.oclc.org/ooxml/officeDocument/relationships'
+      : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    const parts = new Map([
+      ['ppt/presentation.xml', `<deck:presentation xmlns:deck="${presentationNamespace}" xmlns:rel="${relationshipNamespace}" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"><deck:sldIdLst><deck:sldId id="258" rel:id="second"/><deck:sldId id="257" rel:id="first"/></deck:sldIdLst><deck:extLst><deck:ext uri="urn:section-test"><p14:sectionLst><p14:section name="${word(7)}"><p14:sldIdLst><p14:sldId id="257"/><p14:sldId id="258"/></p14:sldIdLst></p14:section></p14:sectionLst><deck:sldIdLst><deck:sldId rel:id="nested"/></deck:sldIdLst></deck:ext></deck:extLst></deck:presentation>`],
+      ['ppt/_rels/presentation.xml.rels', '<Relationships><Relationship Id="first" Target="slides/first.xml"/><Relationship Id="second" Target="/ppt/slides/second.xml"/></Relationships>'],
+      ...['first', 'second'].map((name, index) => [`ppt/slides/${name}.xml`, `<p:sld xmlns:p="${presentationNamespace}" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:sp><p:txBody><a:p><a:r><a:t>${word(index)}</a:t></a:r></a:p></p:txBody></p:sp></p:sld>`] as [string, string]),
+    ]);
+    assert.equal(parsePptxParts(parts).fullText, `[Slide 1]\n${word(1)}\n[Slide 2]\n${word(0)}`);
+  });
+}
+
+test('PPTX direct slide references still reject missing and external relationships', () => {
+  for (const relationship of ['', '<Relationship Id="slide" Target="https://example.invalid/slide.xml" TargetMode="External"/>']) {
+    const parts = new Map([
+      ['ppt/presentation.xml', '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId r:id="slide"/></p:sldIdLst></p:presentation>'],
+      ['ppt/_rels/presentation.xml.rels', `<Relationships>${relationship}</Relationships>`],
+    ]);
+    assert.throws(() => parsePptxParts(parts), /A slide relationship is missing or external/);
+  }
 });

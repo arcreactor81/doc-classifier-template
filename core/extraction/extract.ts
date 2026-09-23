@@ -4,7 +4,7 @@ import { inferPdfHeadings, validatePdfPolicy, type PdfHeadingPolicy, type PdfLin
 import { taggedTables, type MarkedText } from './pdf-structure.ts';
 import type { DigestHeading, DigestTable } from '../digest/digest.ts';
 
-export const EXTRACTOR_VERSION = 'local-extractor-1.0.4';
+export const EXTRACTOR_VERSION = 'local-extractor-1.0.5';
 export interface ExtractOptions {
   pdfWorkerUrl: string;
   pdfPolicy: PdfHeadingPolicy;
