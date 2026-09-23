@@ -2,11 +2,11 @@ import { readVendorHealth,type VendorHealth } from './vendor-health.ts';
 import rawProject from 'project-pack' with {type:'json'};
 import { validateProject, typeVersion, type ProjectPack } from '../config/project.ts';
 import { pricingFor } from './capabilities.ts';
-import { accessIssuer } from './auth.ts';
+import { accessIssuer, type LegacyAccessBindings } from './auth.ts';
 import { ServerFailure,serverCopy } from './errors.ts';
 import { Store,now } from './store.ts';
 export const projectSource=rawProject;
-export async function health(env:Env):Promise<Record<string,unknown>>{
+export async function health(env:Env & LegacyAccessBindings,authentication:'legacy'|'cloudflare'='legacy'):Promise<Record<string,unknown>>{
  const blockers:{code:string;headline:string;action:string;details?:unknown}[]=[];
  const add=(code:string,headline:string,details?:unknown)=>blockers.push({code,headline,action:serverCopy.action,...(details?{details}:{})});
  for(const issue of validateProject(rawProject))add(issue.code,issue.detail,{path:issue.path});
@@ -14,7 +14,7 @@ export async function health(env:Env):Promise<Record<string,unknown>>{
  if(pack.id!==String(env.PROJECT_ID))add('E_PROJECT_BINDING','The deployed project identity differs from its selected Git pack.');
  for(const mode of ['interactive','batch'] as const){try{pricingFor(pack as ProjectPack,mode);}catch(error){add('E_PRICING_UNVERIFIED','Published prices must be recorded before a run can start.',{mode});}}
  if(String(env.MODEL_CALLS_ENABLED)!=='true')add('E_MODEL_CALLS_DISABLED','Model calls are disabled by the deployment.');
- try{accessIssuer(env.ACCESS_TEAM_DOMAIN);if(!env.ACCESS_AUD)throw new Error('Missing audience.');}catch{add('E_ACCESS_CONFIGURATION','Connect the existing Access application identity settings.');}
+ if(authentication==='legacy')try{accessIssuer(env.ACCESS_TEAM_DOMAIN);if(!env.ACCESS_AUD)throw new Error('Missing audience.');}catch{add('E_ACCESS_CONFIGURATION','Connect the existing Access application identity settings.');}
  let threshold:unknown=null,textHeldRuns=0;let vendorHistory:VendorHealth={status:'unavailable',latest:null,unknownSpendCount:null};
  try{
   if(!env.DB)throw new Error('DB binding is absent.');
@@ -42,4 +42,4 @@ export async function health(env:Env):Promise<Record<string,unknown>>{
  }
  return{status:blockers.length?'NOT READY':'READY',blockers,versions:{build:env.BUILD_COMMIT,pins:pack.pins??null},project:{id:typeof pack.id==='string'?pack.id:null,productName:typeof pack.productName==='string'?pack.productName:null,typeVersion:pack.typeFile?await typeVersion(JSON.stringify(pack.typeFile)):null,types:Array.isArray(pack.typeFile?.types)?pack.typeFile.types:null,copyOverrides:pack.copyOverrides},modelCallsEnabled:String(env.MODEL_CALLS_ENABLED)==='true',textHeldRuns,threshold,vendorStatus:vendorHistory.status,vendorHistory};
 }
-export async function requireReady(env:Env):Promise<void>{const status=await health(env);if(status.status!=='READY')throw new ServerFailure('E_NOT_READY','blocker',serverCopy.notReady);}
+export async function requireReady(env:Env & LegacyAccessBindings,authentication:'legacy'|'cloudflare'='legacy'):Promise<void>{const status=await health(env,authentication);if(status.status!=='READY')throw new ServerFailure('E_NOT_READY','blocker',serverCopy.notReady);}

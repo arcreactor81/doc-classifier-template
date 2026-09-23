@@ -1,4 +1,18 @@
 ﻿export const uiCopy = {
+  signInSetupTitle: 'Choose who can use your document workspace.',
+  signInSetupLede: 'Your app is deployed. Enable sign-in before anyone can open documents or start a run.',
+  signInSetupHeading: 'Enable sign-in in Cloudflare',
+  signInSetupDetail: 'The person who deployed this app completes this once. Everyone else simply signs in to the website.',
+  signInSetupSteps: [
+    'Open Cloudflare and select this app under Workers & Pages.',
+    'Open Access, choose Protect this Worker behind Access, then select All traffic.',
+    'Choose the people who may sign in and select Apply Access.',
+    'Return here and select Check sign-in to reload the app and sign in.',
+  ],
+  signInEnable: 'Enable sign-in', signInCheck: 'Check sign-in',
+  signInSetupSafety: 'Document operations are locked until sign-in is enabled. Model calls stay disabled until you finish setup and approve activation.',
+  signInSetupNoCodes: 'No application identifiers, keys, or code changes are needed for this step.',
+
   providerWaitOpenai:'OpenAI requested a pause. This run is waiting before sending another request.', providerWaitTypesafe:'TypeSafe requested a pause. This run is waiting before sending another request.',
   documentFilename:'Document', resultExplanation:'Outcome details',
   workspaceLabel:'DOCUMENT WORKSPACE', navigationLabel:'Workspace navigation', privacyFootnote:'Your originals stay on your machine.', workspaceEyebrow:'A clear path from documents to decisions', sourceEmptyTitle:'Start with your documents', sourceEmptyBody:'Choose a folder to extract its text and structure locally. You review the run before anything is uploaded.', setupStatus:'Setup needs attention', operationalStatus:'Ready for a new run', systemStatus:'System status',

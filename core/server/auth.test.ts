@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPair, SignJWT } from 'jose';
-import { accessIssuer, verifyAccessAssertion } from './auth.ts';
+import { accessIssuer, verifyAccessAssertion, nativeActorFor } from './auth.ts';
 const settings={teamDomain:'unit.cloudflareaccess.com',audience:'unit-audience'};
 const keys=await generateKeyPair('RS256');
 async function token(options:{issuer?:string;audience?:string;expired?:boolean;subject?:string;omitSubject?:boolean}={}){
@@ -25,4 +25,22 @@ test('Access requires a valid team configuration, audience, assertion and same o
  await assert.rejects(verifyAccessAssertion(request(),settings,keys.publicKey),{code:'E_ACCESS_REQUIRED'});
  await assert.rejects(verifyAccessAssertion(request(await token()),{...settings,audience:''},keys.publicKey),{code:'E_ACCESS_CONFIGURATION'});
  await assert.rejects(verifyAccessAssertion(request(await token(),'https://other.invalid'),settings,keys.publicKey),{code:'E_ORIGIN'});
+});
+
+
+test('native Access uses platform identity without trusting request headers',async()=>{
+ const access={aud:'application',getIdentity:async()=>({user_uuid:'person-1',account_id:'account-1',email:'person@example.invalid'})};
+ assert.equal(await nativeActorFor(request('forged-client-assertion','https://unit.invalid'),access),'cloudflare:account-1:person-1');
+ await assert.rejects(nativeActorFor(request('forged-client-assertion')), {code:'E_ACCESS_REQUIRED'});
+});
+test('native Access rejects missing human identity, provider errors and cross-origin writes',async()=>{
+ for(const identity of [undefined,{}, {user_uuid:'person-1'}, {email:'person@example.invalid'}, {user_uuid:'person-1',email:'person@example.invalid'}, {user_uuid:'',account_id:'account-1',email:'person@example.invalid'}, {user_uuid:'person-1',account_id:'account-1',email:'non_identity@unit.cloudflareaccess.com',service_token_status:true}]){
+  await assert.rejects(nativeActorFor(request(),{aud:'application',getIdentity:async()=>identity}),{code:'E_ACCESS_INVALID'});
+ }
+ await assert.rejects(nativeActorFor(request(),{aud:'application',getIdentity:async()=>{throw Error('provider unavailable');}}),{code:'E_ACCESS_INVALID'});
+ const access={aud:'application',getIdentity:async()=>({user_uuid:'person-1',account_id:'account-1',email:'person@example.invalid'})};
+ await assert.rejects(nativeActorFor(request(undefined,'https://other.invalid'),access),{code:'E_ORIGIN'});
+});
+test('missing legacy team settings produce an explicit configuration blocker',()=>{
+ assert.throws(()=>accessIssuer(undefined),{code:'E_ACCESS_CONFIGURATION'});
 });

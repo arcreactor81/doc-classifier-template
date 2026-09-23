@@ -35,8 +35,8 @@ export async function manifestFor(store:Store,run:RunRow):Promise<BuilderManifes
  const key=await store.put(run.id,null,'manifest',value);
  await store.env.DB.prepare('UPDATE runs SET manifest_key=? WHERE id=? AND manifest_key IS NULL').bind(key,run.id).run();return value;
 }
-async function quote(request:Request,env:Env,store:Store,actor:string):Promise<Response>{
- await requireReady(env);const pack=requireProject(projectSource),raw=await jsonBody(request);
+async function quote(request:Request,env:Env,store:Store,actor:string,authentication:'legacy'|'cloudflare'):Promise<Response>{
+ await requireReady(env,authentication);const pack=requireProject(projectSource),raw=await jsonBody(request);
  requireValue(object(raw),'A quote request is required.');exact(raw,['documents','mode']);requireValue(raw.mode==='interactive'||raw.mode==='batch','Select a run mode.');requireValue(Array.isArray(raw.documents)&&raw.documents.length>0,'Choose at least one document.');
  const ids=new Set<string>();const docs:QuoteDocument[]=[];
  for(const value of raw.documents){
@@ -49,8 +49,8 @@ async function quote(request:Request,env:Env,store:Store,actor:string):Promise<R
  await env.DB.prepare('INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES(?,?,?,?,?,?,?,?)').bind(id,actor,now(),raw.mode,version,await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS})),JSON.stringify(docs),JSON.stringify({policy:'reported_usage',version:1,readerPromptVersion:READER_PROMPT_VERSION})).run();
  return response({quoteId:id,typeVersion:version,mode:raw.mode});
 }
-async function createRun(request:Request,env:Env,store:Store,actor:string):Promise<Response>{
- await requireReady(env);const raw=await jsonBody(request);requireValue(object(raw),'A run request is required.');exact(raw,['quoteId','budget']);requireValue(typeof raw.quoteId==='string','A preflight confirmation and explicit budget decision are required.');
+async function createRun(request:Request,env:Env,store:Store,actor:string,authentication:'legacy'|'cloudflare'):Promise<Response>{
+ await requireReady(env,authentication);const raw=await jsonBody(request);requireValue(object(raw),'A run request is required.');exact(raw,['quoteId','budget']);requireValue(typeof raw.quoteId==='string','A preflight confirmation and explicit budget decision are required.');
  const pack=requireProject(projectSource),quote=await env.DB.prepare('SELECT * FROM quotes WHERE id=? AND actor=?').bind(raw.quoteId,actor).first<{id:string;mode:'interactive'|'batch';type_version:string;pack_hash:string;request_json:string;estimate_json:string}>();requireValue(quote,'The preflight confirmation is not available to this person.');
  requireValue(quote.pack_hash===await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS}))&&quote.type_version===await typeVersion(JSON.stringify(pack.typeFile)),'The project changed after this confirmation. Confirm the run again.');
  const docs=JSON.parse(quote.request_json) as QuoteDocument[];
@@ -78,8 +78,8 @@ async function uploadDocument(request:Request,env:Env,store:Store,run:RunRow):Pr
  await env.DB.prepare("INSERT INTO documents(run_id,fingerprint,tag,original_filename,status,input_key,input_hash,extractor_version,decision_json,failure_json,extraction_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(run.id,raw.fingerprint,`r${run.id.slice(0,8)}-${String(index+1).padStart(4,'0')}`,raw.originalFilename,decision?'complete':'uploaded',key,hash,extractor,decision?JSON.stringify(decision):null,failed?JSON.stringify(failed):null,extraction).run();
  await store.event(run.id,String(raw.fingerprint),'upload','completed',{failed:decision!==null});return response({uploaded:true,idempotent:false},201);
 }
-async function start(env:Env,store:Store,run:RunRow):Promise<Response>{
- await requireReady(env);requireValue(['uploading','running'].includes(run.status),'This run cannot start again.');const docs=await store.documents(run.id);requireValue(docs.length===run.expected_count,'Every document must be uploaded before starting.');
+async function start(env:Env,store:Store,run:RunRow,authentication:'legacy'|'cloudflare'):Promise<Response>{
+ await requireReady(env,authentication);requireValue(['uploading','running'].includes(run.status),'This run cannot start again.');const docs=await store.documents(run.id);requireValue(docs.length===run.expected_count,'Every document must be uploaded before starting.');
  if(run.status==='uploading'){
   const mixed=new Set(docs.map(doc=>doc.extractor_version).filter(Boolean)).size>1;
   if(mixed)for(const doc of docs)await env.DB.prepare('UPDATE documents SET notes_json=? WHERE run_id=? AND fingerprint=?').bind(JSON.stringify(['N_EXTRACTOR_VERSION_MIXED']),run.id,doc.fingerprint).run();
@@ -108,15 +108,22 @@ async function corrections(request:Request,env:Env,store:Store,run:RunRow,actor:
  const rawKey=await store.put(run.id,null,'correction_input',raw),resultKey=await store.put(run.id,null,'correction_analysis',{diff,proposals,proposalContext});
  await env.DB.prepare('INSERT INTO corrections(id,run_id,actor,created_at,raw_key,result_key,proposals_json) VALUES(?,?,?,?,?,?,?)').bind(id,run.id,actor,now(),rawKey,resultKey,JSON.stringify(proposals)).run();return response({correctionId:id,diff,proposals,proposalContext});
 }
-export async function handle(request:Request,env:Env):Promise<Response>{
+export function handle(request:Request,env:Env & {ASSETS?:Fetcher}):Promise<Response>{return handleRequest(request,env);}
+// Entry-point-only identity; no request field can select this authentication mode.
+export function handleWithCloudflareIdentity(request:Request,env:Env,actor:string):Promise<Response>{
+ if(!actor)return Promise.resolve(response(failureResponse(new ServerFailure('E_ACCESS_REQUIRED','request','Sign in to continue.',401)),401));
+ return handleRequest(request,env,actor);
+}
+async function handleRequest(request:Request,env:Env & {ASSETS?:Fetcher},cloudflareActor?:string):Promise<Response>{
  try{
   const url=new URL(request.url),path=url.pathname;
-  if(path==='/api/health'&&request.method==='GET')return response(await health(env));
+  const authentication=cloudflareActor?'cloudflare':'legacy';
+  if(path==='/api/health'&&request.method==='GET')return response({...await health(env,authentication),...(cloudflareActor?{signIn:{mode:'cloudflare',authenticated:true}}:{})});
   if(path==='/api/project'&&request.method==='GET')return response(projectSource);
-  if(!path.startsWith('/api/'))return await env.ASSETS.fetch(request);
-  const actor=await actorFor(request,env),store=new Store(env);
-  if(path==='/api/quote'&&request.method==='POST')return await quote(request,env,store,actor);
-  if(path==='/api/runs'&&request.method==='POST')return await createRun(request,env,store,actor);
+  if(!path.startsWith('/api/'))return env.ASSETS?await env.ASSETS.fetch(request):new Response(null,{status:404});
+  const actor=cloudflareActor??await actorFor(request,env),store=new Store(env);
+  if(path==='/api/quote'&&request.method==='POST')return await quote(request,env,store,actor,authentication);
+  if(path==='/api/runs'&&request.method==='POST')return await createRun(request,env,store,actor,authentication);
   if(path==='/api/runs'&&request.method==='GET'){
    const rows=(await env.DB.prepare('SELECT * FROM runs WHERE actor=? ORDER BY created_at DESC').bind(actor).all<RunRow>()).results;const runs=[];
    for(const run of rows){const docs=await store.documents(run.id),spend=await store.spendByVendor(run.id);runs.push({id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:docs.filter(doc=>doc.status==='complete').length,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),textHeld:!!run.text_held,mode:run.mode});}return response({runs});
@@ -131,7 +138,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
   const evidence=/^documents\/([^/]+)\/evidence$/.exec(action??'');
   if(evidence&&request.method==='GET')return response(await documentEvidence(store,run.id,evidence[1],actor));
   if(action==='documents'&&request.method==='POST')return await uploadDocument(request,env,store,run);
-  if(action==='start'&&request.method==='POST')return await start(env,store,run);
+  if(action==='start'&&request.method==='POST')return await start(env,store,run,authentication);
   if(action==='close'&&request.method==='POST'){await store.close(run.id,actor);return response({closed:true});}
   if(action==='manifest'&&request.method==='GET'){const manifest=await manifestFor(store,run);await store.close(run.id,actor);return new Response(JSON.stringify(manifest,null,2),{headers:{'content-type':'application/json','content-disposition':`attachment; filename="${run.id}-manifest.json"`,'cache-control':'no-store'}});}
   if(action==='corrections'&&request.method==='POST')return await corrections(request,env,store,run,actor);

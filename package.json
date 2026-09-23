@@ -39,12 +39,6 @@
       "JEV_API_KEY": {
         "description": "Your TypeSafe API key. Enter only in the secure Cloudflare setup field, never Git."
       },
-      "ACCESS_TEAM_DOMAIN": {
-        "description": "Your Zero Trust team hostname ending .cloudflareaccess.com."
-      },
-      "ACCESS_AUD": {
-        "description": "The audience (AUD) of the Access application protecting this Worker."
-      },
       "MODEL_CALLS_ENABLED": {
         "description": "Keep false during setup. Enable only after Health blockers are resolved and spending is approved."
       }
