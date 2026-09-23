@@ -54,8 +54,21 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
       } finally { store.close(); }
     }
     let pending: number;
+    const stopped = (status: string | undefined) => ['halted', 'complete', 'closing', 'closed', 'failed'].includes(status ?? '');
     do {
-      const launched = await options.request<{ started: number; pending: number }>('/api/runs/' + encodeURIComponent(runId) + '/start', {});
+      let launched: { started: number; pending: number; status?: string };
+      try {
+        launched = await options.request('/api/runs/' + encodeURIComponent(runId) + '/start', {});
+      } catch (error) {
+        // A dispatch can halt while its response is in flight. Read the existing
+        // run once; never retry a start request or create a replacement run here.
+        let current: { run: { status: string } };
+        try { current = await options.request('/api/runs/' + encodeURIComponent(runId)); }
+        catch { throw error; }
+        if (stopped(current.run.status)) { options.onRun(runId); return; }
+        throw error;
+      }
+      if (stopped(launched.status)) { options.onRun(runId); return; }
       pending = launched.pending;
       if (!Number.isSafeInteger(pending) || pending < 0) throw new Error(c.requestFailed);
       if (pending > 0) await new Promise(resolve => setTimeout(resolve, 1000));

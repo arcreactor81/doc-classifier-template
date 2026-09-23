@@ -20,6 +20,9 @@ export const uiCopy = {
   readyDetail: 'The required configuration checks passed. Review spending limits before starting a run.', healthIntro: 'Check setup, spending activation, and the information this workspace retains.',
   setupTypeTitle: 'Define your document categories', setupTypeAction: 'The workspace has no usable category definitions yet. The person configuring this project needs to add names, descriptions, exclusions, and examples in the project repository, then deploy.',
   setupModelsTitle: 'Activate model calls when you are ready', setupModelsAction: 'Model calls are switched off. Finish defining your categories, then enable MODEL_CALLS_ENABLED in the deployment configuration. This permits paid calls; it does not start a run.',
+  runStoppedTitle: 'This run has stopped.',
+  runStoppedDetail: 'No further documents will start. Work already sent to a vendor may still finish. This run has not completed and will not restart automatically.',
+  runStoppedReasonUnavailable: 'The stopping reason is unavailable here. Check the recorded events and Health before deciding what to do next.',
   preflightReady: 'Extract a source folder, choose your spending limits, then select Review run.',
 
   signInSetupTitle: 'Choose who can use your document workspace.',

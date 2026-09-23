@@ -67,7 +67,11 @@ export class Store {
    fail:async(name,error)=>{await this.env.DB.prepare("UPDATE checkpoints SET status='failed',error_code=?,error_kind=?,error_detail=?,finished_at=? WHERE run_id=? AND fingerprint=? AND name=? AND status='running'").bind(error.code,error.kind,error.message,now(),runId,fingerprint,name).run();},
   };
  }
- async halt(runId:string,details:unknown):Promise<void>{await this.env.DB.prepare("UPDATE runs SET status='halted',halt_json=? WHERE id=? AND status NOT IN('closing','closed')").bind(JSON.stringify(details),runId).run();await this.event(runId,null,'run','halted',details);}
+ async halt(runId:string,details:unknown):Promise<void>{
+  // Only the first transition records the cause; concurrent workflow guards must not replace it.
+  const changed=await this.env.DB.prepare("UPDATE runs SET status='halted',halt_json=? WHERE id=? AND status IN('uploading','running')").bind(JSON.stringify(details),runId).run();
+  await this.event(runId,null,'run',changed.meta.changes===1?'halted':'halt_observed',details);
+ }
  async close(runId:string,actor:string):Promise<void>{
   const run=await this.run(runId);if(run.status==='closed')return;
   await this.env.DB.prepare("UPDATE runs SET status='closing' WHERE id=? AND status!='closed'").bind(runId).run();

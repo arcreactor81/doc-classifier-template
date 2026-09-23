@@ -14,6 +14,10 @@ export function failure(error: unknown): ServerFailure {
   return new ServerFailure('E_INTERNAL', 'blocker', error instanceof Error ? error.message : String(error), 500);
 }
 export const serverCopy = {
+  runHalted: 'This run has stopped. Review its recorded cause before starting another run.',
+  runHaltAction: 'Keep this run and its records. Review the stopped-run details before explicitly starting any new work.',
+  runSizeUnknownUsage: 'A document exceeded the confidence check token limit. Its usage was not returned, so the run stopped for review.',
+  runKilled: 'The kill switch stopped this run.',
   action: 'Send this sentence to your technical contact: The document classifier is blocked; please inspect the recorded error code and Health details.',
   corrections: {
     E_CORRECTION_ROOT_FOLDER: {headline: 'Choose the main output folder for corrections.', action: 'Select the folder containing the document-type folders. Put each document inside its intended folder, then choose the output folder again.'},

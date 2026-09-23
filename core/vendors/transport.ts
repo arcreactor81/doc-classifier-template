@@ -1,4 +1,4 @@
-import { verifyModelPolicy, type FrozenVendorRequest, type VendorRole } from './requests.ts';
+import { verifyModelPolicy, type FrozenVendorRequest, type VendorRole, type ReaderEvaluationPolicy } from './requests.ts';
 import { ValidationFailure } from './validate.ts';
 
 export interface RetryPolicy {
@@ -76,7 +76,8 @@ async function exhausted(role: VendorRole, deps: TransportDependencies, policy: 
 
 /** Bounded retries of the SAME immutable request bytes. No vendor is contacted except injected fetch. */
 export async function executeVendor<T>(request: FrozenVendorRequest, policy: RetryPolicy, deps: TransportDependencies,
-  decode: (raw: unknown) => T): Promise<{ value: T; attemptIds: string[] }> {
+  decode: (raw: unknown) => T, evaluation?: ReaderEvaluationPolicy): Promise<{ value: T; attemptIds: string[] }> {
+  evaluation = evaluation === undefined ? undefined : Object.freeze({ ...evaluation, models: Object.freeze([...evaluation.models]) });
   validatePolicy(policy, request.role);
   const endpoint = request.role === 'confidence' ? 'https://api.typesafe.ai/v1/systemone' : 'https://api.openai.com/v1/responses';
   if (request.endpoint !== endpoint) throw new ValidationFailure('E_VENDOR_ENDPOINT', 'blocker', 'Vendor endpoint differs from the permitted API.');
@@ -84,7 +85,7 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
   const { role, model, body } = request;
   const modelPolicy = { ...request.modelPolicy };
   if (modelPolicy.id !== model) throw new ValidationFailure('E_MODEL_POLICY', 'blocker', 'Request model and policy differ.');
-  verifyModelPolicy(modelPolicy, model, role);
+  verifyModelPolicy(modelPolicy, model, role, evaluation);
   const attemptIds: string[] = [];
   for (let schemaAttempt = 1; schemaAttempt <= policy.schemaAttempts; schemaAttempt++) {
     for (let transportAttempt = 1; transportAttempt <= policy.transportAttempts; transportAttempt++) {
@@ -127,7 +128,7 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
       try { await deps.logCall({ ...metadata, modelReturned, usage }); }
       catch { throw new ValidationFailure('E_VENDOR_LOG', 'blocker', 'Vendor call usage and event could not be stored.'); }
       const error = record(parsed) && record(parsed.error) ? parsed.error : null;
-      if (modelReturned !== null) verifyModelPolicy(modelPolicy, modelReturned, role);
+      if (modelReturned !== null) verifyModelPolicy(modelPolicy, modelReturned, role, evaluation);
       const permanentOpenAiQuota = role !== 'confidence' && status === 429 && typeof error?.code === 'string' && permanentOpenAiQuotaCodes.has(error.code);
       // No further inference is possible after this blocker, so preserve the provider diagnosis before the guard that stops new work on unknown usage.
       if (permanentOpenAiQuota) throw new ValidationFailure('E_OPENAI_QUOTA', 'blocker', 'OpenAI quota or billing access requires action before another request.');

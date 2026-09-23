@@ -149,6 +149,13 @@ async function runs(main: HTMLElement, generation: number): Promise<void> {
   intro(main,c.runs,c.runsLede);
   if (!activeRun) { const data = await api<{ runs: Json[] }>('/api/runs'); if (generation !== renderId) return; if (!data.runs.length) {const empty=el('section',undefined,'empty');empty.append(icon('runs'),el('h2',c.emptyRunsTitle),el('p',c.emptyRunsDetail),button(c.startRun,()=>route('home'),true));main.append(empty);} for (const run of data.runs) { const box = section(String(run.id));box.classList.add('run-card'); const stats = el('div',undefined,'stats'); stat(stats,c.status,String(run.status)); stat(stats,c.progress,`${run.completed} / ${run.total}`); if(Number(run.unaccountedCalls)>0)box.append(el('p',c.unaccountedSpend+': '+run.unaccountedCalls));box.append(stats,button(c.openRun,()=>route('runs',String(run.id)))); main.append(box); } return; }
   const data = await api<{ run: Json; documents: Json[]; events: Json[] }>(`/api/runs/${encodeURIComponent(activeRun)}`); if(generation !== renderId)return;
+  if (data.run.status === 'halted') {
+    const reason = data.run.stopReason as {code: string; kind: string; headline: string; action: string; details?: unknown} | null | undefined;
+    const stopped = section(c.runStoppedTitle, c.runStoppedDetail); stopped.classList.add('error','run-stop-reason'); stopped.setAttribute('role','alert');
+    if (reason) stopped.append(el('h3',reason.headline),el('p',reason.action),technical(reason));
+    else stopped.append(el('p',c.runStoppedReasonUnavailable));
+    main.append(stopped);
+  }
   const run = data.run;const waitStatus=el('div',undefined,'privacy-banner');waitStatus.setAttribute('role','status');function updateProviderWait(){const waits=activeProviderWaits(String(run.status),data.events,Date.now());waitStatus.replaceChildren(...waits.map(wait=>el('p',wait.scope==='openai'?c.providerWaitOpenai:c.providerWaitTypesafe)));if(waits.length){const next=Math.min(...waits.map(wait=>wait.until));waitExpiry=setTimeout(updateProviderWait,Math.max(1,Math.min(next-Date.now(),2147483647)));}else waitStatus.remove();}if(activeProviderWaits(String(run.status),data.events,Date.now()).length){main.append(waitStatus);updateProviderWait();} const box = section(`${c.runId}: ${activeRun}`);box.classList.add('run-overview'); const stats = el('div',undefined,'stats'); stat(stats,c.status,String(run.status)); stat(stats,c.progress,`${run.completed} / ${run.total}`); box.append(stats);
   const spend=run.spend as Partial<Record<SpendKey,string>>|undefined;const budget=run.budget as {mode?:string;limits?:Partial<Record<SpendKey,string|null>>}|undefined;
   const spendBox=section(Number(run.unaccountedCalls)>0?c.knownSpend:c.spend,c.spendingLag);spendBox.classList.add('spend-card');

@@ -1,7 +1,7 @@
 import { WorkflowEntrypoint,type WorkflowEvent,type WorkflowStep } from 'cloudflare:workers';
 import { NonRetryableError } from 'cloudflare:workflows';
 import { requireRunProject } from '../config/project.ts';
-import { buildStructuredState,type StructuredStateResult } from '../digest/structured-state.ts';
+import { buildConfidenceState,type ConfidenceStateResult } from '../digest/confidence-state.ts';
 import { verifyRecoveredHeadings } from '../digest/recovery.ts';
 import { buildConfidenceRequest,buildReaderRequest,buildRecoveryRequest,decodeConfidence,decodeReader,decodeRecovery } from '../vendors/requests.ts';
 import type { ConfidenceOutput,ReaderOutput } from '../vendors/validate.ts';
@@ -38,8 +38,8 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
      notes.push('N_OUTLINE_RECOVERED');
     }
    }
-   const digestKey=await runner.stage('digest',async()=>buildStructuredState(upload.fullText,outline,pack.structuralVocabulary),true);
-   const digest=await store.json<StructuredStateResult>(digestKey);notes.push(...digest.notes);
+   const digestKey=await runner.stage('digest',async()=>buildConfidenceState(pack.settings.confidenceStatePolicy,upload.fullText,outline,pack.structuralVocabulary),true);
+   const digest=await store.json<ConfidenceStateResult>(digestKey);notes.push(...digest.notes);
    await this.env.DB.prepare('UPDATE documents SET digest_key=?,notes_json=? WHERE run_id=? AND fingerprint=?').bind(digestKey,JSON.stringify([...new Set(notes)]),runId,fingerprint).run();
    const confidenceRequest=buildConfidenceRequest({pin:pack.pins.confidence,typeFile:pack.typeFile,serializedDigest:digest.serialized});
    const confidenceKey=await runner.vendor(confidenceRequest,pack,raw=>decodeConfidence(raw,pack.pins.confidence,pack.typeFile.types.map(type=>type.id)));

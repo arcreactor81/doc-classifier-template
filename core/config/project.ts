@@ -1,3 +1,4 @@
+import {isFullTextInputPolicy,type ConfidenceStatePolicy} from './input-policy.ts';
 import type {DecisionNotePolicy} from '../domain/decision.ts';
 import { validateProjectCopy } from '../ui/project-copy.ts';
 import type { TokenRates } from '../cost/cost.ts';
@@ -5,7 +6,7 @@ export interface DocumentType { id:string; name:string; what:string; not_for:str
 export interface TypeFile { types:DocumentType[]; none_of_these:{name:string;what:string} }
 export interface ModelPin { id:string; date:string; reason:string; policy:'versioned'|'owner_approved_alias' }
 export interface ProjectSettings {
- decisionNotePolicy:DecisionNotePolicy; confidenceStatePolicy:'untrimmed-structured-state-v2'; digestBudget?:number|null; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
+ decisionNotePolicy:DecisionNotePolicy; confidenceStatePolicy:ConfidenceStatePolicy; digestBudget?:number|null; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
  recoveryMinimumHeadings:number; minimumFiledCount:number; batchCutoff:number; defaultMode:'interactive'|'batch';
  pdfPolicy:{largeFontRatio:number;maxHeadingCharacters:number;topPageFraction:number;gapRatio:number};
 }
@@ -66,8 +67,8 @@ export function validateProject(value:unknown):ConfigIssue[]{
  else{
   for(const field of ['readerMaxOutputTokens','recoveryMaxOutputTokens','recoveryMinimumHeadings','minimumFiledCount','batchCutoff'])
    if(!Number.isSafeInteger(settings[field])||Number(settings[field])<1)issue('settings.'+field,'A positive integer is required.');
-  if(!['all-notes-review-v1','full-state-structural-info-v2'].includes(String(settings.decisionNotePolicy))||settings.decisionNotePolicy==='full-state-structural-info-v2'&&settings.confidenceStatePolicy!=='untrimmed-structured-state-v2')issue('settings.decisionNotePolicy','Select an explicit compatible decision note policy.');
-  if(settings.confidenceStatePolicy!=='untrimmed-structured-state-v2')issue('settings.confidenceStatePolicy','Select the explicit untrimmed structured-state policy.');
+  if(!['all-notes-review-v1','full-state-structural-info-v2'].includes(String(settings.decisionNotePolicy))||settings.decisionNotePolicy==='full-state-structural-info-v2'&&!isFullTextInputPolicy(settings.confidenceStatePolicy))issue('settings.decisionNotePolicy','Select an explicit compatible decision note policy.');
+  if(!isFullTextInputPolicy(settings.confidenceStatePolicy))issue('settings.confidenceStatePolicy','Select an explicit supported full-text input policy.');
   if(!['low','medium'].includes(String(settings.readerEffort)))issue('settings.readerEffort','Select low or medium.');
   if(!['interactive','batch'].includes(String(settings.defaultMode)))issue('settings.defaultMode','Select interactive or batch.');
   if(!record(settings.pdfPolicy))issue('settings.pdfPolicy','Explicit extraction policy is required.');
@@ -76,8 +77,8 @@ export function validateProject(value:unknown):ConfigIssue[]{
  else for(const role of ['confidence','reader','recovery']){
   const pin=value.pins[role];
   if(!record(pin)||!nonempty(pin.id)||!nonempty(pin.date)||!nonempty(pin.reason)){issue('pins.'+role,'Record model ID, date and reason.');continue;}
-  const aliases=role==='reader'?['gpt-5.6-terra','gpt-6-sol']:role==='recovery'?['gpt-5.6-luna']:[];
-  const versioned=role==='confidence'?/^jev-\d+\.\d+\.\d+$/.test(pin.id):role==='reader'?/^gpt-(?:5\.6-terra|6-sol)-\d{4}-\d{2}-\d{2}$/.test(pin.id):/^gpt-5\.6-luna-\d{4}-\d{2}-\d{2}$/.test(pin.id);
+  const aliases=role==='reader'?['gpt-5.6-terra','gpt-6-sol']:role==='recovery'?['gpt-5.6-luna','gpt-6-luna']:[];
+  const versioned=role==='confidence'?/^jev-\d+\.\d+\.\d+$/.test(pin.id):role==='reader'?/^gpt-(?:5\.6-terra|6-sol)-\d{4}-\d{2}-\d{2}$/.test(pin.id):/^gpt-(?:5\.6-luna|6-luna)-\d{4}-\d{2}-\d{2}$/.test(pin.id);
   if(!(pin.policy==='versioned'&&versioned)&&!(pin.policy==='owner_approved_alias'&&aliases.includes(pin.id)))
    issue('pins.'+role,'Only versioned models or explicitly approved aliases for this role are permitted.','E_MODEL_POLICY');
  }
@@ -129,7 +130,7 @@ export function runDecisionNotePolicy(settings:unknown):DecisionNotePolicy{
  if(!record(settings))throw new Error('Frozen run settings are missing.');
  if(!Object.hasOwn(settings,'decisionNotePolicy'))return'all-notes-review-v1';
  if(settings.decisionNotePolicy!=='all-notes-review-v1'&&settings.decisionNotePolicy!=='full-state-structural-info-v2')throw new Error('Frozen run note policy is invalid.');
- if(settings.decisionNotePolicy==='full-state-structural-info-v2'&&settings.confidenceStatePolicy!=='untrimmed-structured-state-v2')throw new Error('Frozen run note policy requires full structured state.');
+ if(settings.decisionNotePolicy==='full-state-structural-info-v2'&&!isFullTextInputPolicy(settings.confidenceStatePolicy))throw new Error('Frozen run note policy requires full structured state.');
  return settings.decisionNotePolicy;
 }
 export function requireRunProject(value:unknown):ProjectPack{

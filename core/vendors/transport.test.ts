@@ -144,6 +144,15 @@ test('only explicit temporary429 hints are shared after raw persistence and call
  const permanent=harness([new Response(JSON.stringify({error:{code:'insufficient_quota'}}),{status:429,headers:{'retry-after':'2'}})]);permanent.deps.observeRetryAfter=async()=>{throw Error('Must not share permanent quota');};await assert.rejects(executeVendor(request,policy,permanent.deps,decode),{code:'E_OPENAI_QUOTA'});
 });
 
+test('approved Luna6 recovery transport works in production and still validates explicit evaluation policy',async()=>{
+ const custom={...request,role:'recovery' as const,model:'gpt-6-luna',modelPolicy:{...request.modelPolicy,id:'gpt-6-luna'},body:'{"model":"gpt-6-luna"}'};
+ const make=()=>harness([new Response(JSON.stringify({model:'gpt-6-luna',usage:{input_tokens:1,output_tokens:2},value:true}))]);
+ const recoveryPolicy={...policy,schemaAttempts:1};
+ const production=make();assert.equal((await executeVendor(custom,recoveryPolicy,production.deps,decode)).value,true);assert.equal(production.sent.length,1);
+ const blocked=make();await assert.rejects(executeVendor({...custom,model:'gpt-6-astra',modelPolicy:{...custom.modelPolicy,id:'gpt-6-astra'}},recoveryPolicy,blocked.deps,decode),/policy/);assert.equal(blocked.sent.length,0);
+ const allowed=make();assert.equal((await executeVendor(custom,recoveryPolicy,allowed.deps,decode,{purpose:'owner_authorized_evaluation',role:'recovery',authorization:'explicit isolated experiment',models:['gpt-6-luna']})).value,true);
+});
+
 test('approved production Sol retries only identical bytes and rejects Terra responses without fallback',async()=>{
  const sol={...request,model:'gpt-6-sol',modelPolicy:{...request.modelPolicy,id:'gpt-6-sol'},body:'{"model":"gpt-6-sol","input":"1"}'};
  const success=new Response(JSON.stringify({model:sol.model,usage:{input_tokens:1,output_tokens:2},value:true}));

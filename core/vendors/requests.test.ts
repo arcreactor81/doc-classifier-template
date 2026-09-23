@@ -99,6 +99,7 @@ test('reader preserves multiline tabs unicode and literal source quotes through 
  for(const changed of ['First Second','Second \u201cUnicode caf\u00e9 \u03a9 \u{1F642}\u201d','"First"','\u201cUnicode cafe \u03a9 \u{1F642}\u201d'])assert.throws(()=>decodeReader(withEvidence([changed]),alias,['type_a'],source),/verbatim/);
 });
 
+
 test('production Sol preserves the reader contract and validates only its exact returned family',()=>{
  const sol={...alias,id:'gpt-6-sol'};
  const options={typeFile:types,text,effort:'low',maxOutputTokens:16384};
@@ -118,5 +119,14 @@ test('production model identities remain role scoped for aliases and dated pins'
   assert.throws(()=>verifyModelPolicy(versioned,id,'reader'),/model/i);
  }
  for(const id of ['gpt-6-luna','gpt-5.6-luna','gpt-6-astra'])for(const candidate of [{...alias,id},{...alias,id:id+'-2026-09-23',policy:'versioned' as const}])assert.throws(()=>buildReaderRequest({pin:candidate,typeFile:types,text,effort:'low',maxOutputTokens:16384}),/policy/);
- for(const id of ['gpt-6-sol','gpt-5.6-terra','gpt-6-luna'])for(const candidate of [{...alias,id},{...alias,id:id+'-2026-09-23',policy:'versioned' as const}])assert.throws(()=>buildRecoveryRequest({pin:candidate,text,effort:'low',maxOutputTokens:8192}),/policy/);
+ for(const id of ['gpt-6-sol','gpt-5.6-terra','gpt-6-astra'])for(const candidate of [{...alias,id},{...alias,id:id+'-2026-09-23',policy:'versioned' as const}])assert.throws(()=>buildRecoveryRequest({pin:candidate,text,effort:'low',maxOutputTokens:8192}),/policy/);
+});
+
+
+test('approved production Luna6 recovery changes only model and preserves strict identity validation',()=>{
+ const old={...alias,id:'gpt-5.6-luna'},next={...alias,id:'gpt-6-luna'};
+ const options={text,effort:'low',maxOutputTokens:8192};
+ assert.deepEqual(JSON.parse(buildRecoveryRequest({...options,pin:next}).body),{...JSON.parse(buildRecoveryRequest({...options,pin:old}).body),model:'gpt-6-luna'});
+ for(const returned of ['gpt-6-luna','gpt-6-luna-2026-09-23'])verifyModelPolicy(next,returned,'recovery');
+ for(const returned of ['gpt-5.6-luna','gpt-6-sol','gpt-6-luna-other'])assert.throws(()=>verifyModelPolicy(next,returned,'recovery'),{code:'E_LUNA_PIN_DRIFT'});
 });

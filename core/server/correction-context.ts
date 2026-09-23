@@ -1,4 +1,5 @@
-﻿import type {ReaderOutput} from '../vendors/validate.ts';
+import {isFullTextInputPolicy} from '../config/input-policy.ts';
+import type {ReaderOutput} from '../vendors/validate.ts';
 import type {ReaderEvidence} from '../correction/proposals.ts';
 export interface RetainedDigestContext {policyVersion:string;state:{title:string;sections:{text:string}[]}}
 export interface CorrectionContext {title:string;digestLines:string[];unavailable:boolean;fullContextUnavailable:boolean;readerEvidence:ReaderEvidence[]}
@@ -9,7 +10,7 @@ export async function correctionContext(filename:string,key:string|null,artifact
  if(key&&await retained(key)){
   const digest=await artifacts.read(key);
   if(digest.policyVersion==='named-fields-json-v1'){result.title=digest.state.title;result.digestLines=digest.state.sections.map(section=>section.text);result.unavailable=false;}
-  else if(digest.policyVersion!=='untrimmed-structured-state-v2')throw new Error('Unknown retained state policy.');
+  else if(!isFullTextInputPolicy(digest.policyVersion))throw new Error('Unknown retained state policy.');
  }
  if(readerKey&&await retained(readerKey)){
   if(!artifacts.readReader)throw new Error('Retained reader artifact loader is required.');

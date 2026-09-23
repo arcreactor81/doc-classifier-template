@@ -1,3 +1,4 @@
+import {isFullTextInputPolicy} from '../config/input-policy.ts';
 /** Deterministic first-match decision table from DESIGN.md §5.6. */
 export type DecisionNotePolicy='all-notes-review-v1'|'full-state-structural-info-v2';
 export const STRUCTURAL_INFORMATION_NOTES:readonly string[]=['N_NO_OUTLINE','N_NO_STRUCTURAL_SECTIONS','N_OUTLINE_RECOVERED'];
@@ -55,7 +56,7 @@ export function decide(input: DecisionInput): Decision {
 
   const notePolicy=input.notePolicy===undefined?'all-notes-review-v1':input.notePolicy;
   requireValid(notePolicy==='all-notes-review-v1'||notePolicy==='full-state-structural-info-v2','note policy must be recognized');
-  requireValid(notePolicy!=='full-state-structural-info-v2'||input.confidenceStatePolicy==='untrimmed-structured-state-v2','informational note policy requires the full-state policy');
+  requireValid(notePolicy!=='full-state-structural-info-v2'||isFullTextInputPolicy(input.confidenceStatePolicy),'informational note policy requires the full-state policy');
   const details = {
     destinationFolder: 'human_review',
     failures: [...input.failures],

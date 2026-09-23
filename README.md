@@ -22,6 +22,8 @@ Design references to revisit include **Dippa Inhouse** (the reference supplied b
 
 **Sequence:** complete native-browser and independent-deployment acceptance first, then revisit the visual design and language as part of product enhancements. GEPA and other enhancement ideas remain separate follow-up work. This roadmap entry does not change classification behavior.
 
+**Latest owner feedback:** the current refresh still does not meet the desired design standard. Reimagine the interface and task flow. Start run should open a dedicated monitoring window while keeping the main workspace available; this is planned, not implemented. See the [UX acceptance update](docs/action-plan.md#owner-ux-acceptance-update-dedicated-run-window-and-full-redesign).
+
 ## Development
 
 Use Node 24.18.0.

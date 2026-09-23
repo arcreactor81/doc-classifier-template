@@ -1,5 +1,5 @@
-﻿import type { ProjectPack } from '../config/project.ts';
-import { buildStructuredState,STRUCTURED_STATE_POLICY } from '../digest/structured-state.ts';
+import type { ProjectPack } from '../config/project.ts';
+import { buildConfidenceState } from '../digest/confidence-state.ts';
 import type { LocalDocument } from './state.ts';
 import { uiCopy } from '../ui/copy.ts';
 
@@ -7,7 +7,6 @@ export interface TokenCounts { readerInputTokens: number|null; confidenceInputTo
 export interface QuoteDocument { fingerprint: string; originalFilename: string; tokenCounts: TokenCounts; needsOutlineRecovery: boolean; failed: boolean }
 export interface PreparedDocument { local: LocalDocument; quote: QuoteDocument; upload: Record<string, unknown> }
 export function prepareLocalRun(records: readonly LocalDocument[], pack: ProjectPack): PreparedDocument[] {
-  if(pack.settings.confidenceStatePolicy!==STRUCTURED_STATE_POLICY)throw new Error('The structured-state policy must be explicit.');
   const seen = new Set<string>();
   return records.map(local => {
     if (seen.has(local.fingerprint)) throw new Error(uiCopy.duplicateContent);
@@ -19,7 +18,7 @@ export function prepareLocalRun(records: readonly LocalDocument[], pack: Project
     if (local.state === 'could_not_process') return failed(local.failure);
     const document = local.document;
 
-    buildStructuredState(document.fullText,document.outline,pack.structuralVocabulary);
+    buildConfidenceState(pack.settings.confidenceStatePolicy,document.fullText,document.outline,pack.structuralVocabulary);
     // No local billing estimate: the vendors report actual usage after each request.
     const tokenCounts: TokenCounts = {readerInputTokens: null, confidenceInputTokens: null, recoveryInputTokens: null};
     return {local, quote: {...identity, tokenCounts, needsOutlineRecovery: document.needsOutlineRecovery, failed: false}, upload: {...document, tokenCounts, tokenizerIds: {reader: null, confidence: null}}};

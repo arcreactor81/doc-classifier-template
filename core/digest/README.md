@@ -1,6 +1,8 @@
 # Current and legacy document state
 
-The active pipeline uses buildStructuredState in structured-state.ts with policy untrimmed-structured-state-v2: full extracted text and outline, no local token counter and no 6,000-token trimming. Response usage supplies token counts. Full-state artifacts contain source text and are deleted on user closure. The budgeted digest API described below is retained for historical compatibility and tests; it is not a current readiness dependency. Verbatim heading verification remains active.
+New runs explicitly use full-text-outline-v3 through buildConfidenceState: the exact full text occurs once, with complete heading and table-header metadata. Fragment text/position records remain in the canonical source artifact but are not serialized a second time into Jev input. No text summarization, tokenizer proxy, cutoff, or section trimming is introduced. Title is explicit metadata or a heading; absent title is null rather than another copy of the body. Selection logs account for preserved full text/outline.
+
+Frozen untrimmed-structured-state-v2 runs still use their original builder and request wording. Both policies preserve the informational structural-note behavior when paired with full-state-structural-info-v2. Full-state artifacts remain source-containing and are deleted on user closure. Response usage supplies token counts; compact bytes are not a promise of provider token-limit fit. The old token-budgeted digest below remains historical, not the new structural-N proposal.
 
 ## Historical helper reference
 

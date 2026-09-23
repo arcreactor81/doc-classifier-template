@@ -1,10 +1,12 @@
+import {dispatchRunDocuments} from './start-dispatch.ts';
+import {readRunStopReason} from './run-stop.ts';
 import {uiCopy} from '../ui/copy.ts';
 import { documentEvidence } from './document-evidence.ts';
 import { workflowInstanceId } from './workflow-identity.ts';
 import { correctionContext } from './correction-context.ts';
 import { requireProject,typeVersion,type ProjectPack ,requireRunProject,runDecisionNotePolicy} from '../config/project.ts';
 import { authorizeRunBudget,readRunBudget } from '../cost/run-budget.ts';
-import { buildStructuredState } from '../digest/structured-state.ts';
+import { buildConfidenceState } from '../digest/confidence-state.ts';
 import { VENDOR_PROMPTS,READER_PROMPT_VERSION } from '../vendors/requests.ts';
 import type { ConfidenceOutput,ReaderOutput } from '../vendors/validate.ts';
 import { decide,type Decision } from '../domain/decision.ts';
@@ -64,7 +66,7 @@ async function createRun(request:Request,env:Env,store:Store,actor:string,authen
 }
 export function verifyUploadTokens(upload:Upload,pack:ProjectPack):void{
  requireValue(upload.tokenizerIds.confidence===null&&upload.tokenizerIds.reader===null,'This state policy does not use local token counters.');
- buildStructuredState(upload.fullText,upload.outline,pack.structuralVocabulary);
+ buildConfidenceState(pack.settings.confidenceStatePolicy,upload.fullText,upload.outline,pack.structuralVocabulary);
 }
 async function uploadDocument(request:Request,env:Env,store:Store,run:RunRow):Promise<Response>{
  requireValue(run.status==='uploading','This run is no longer accepting uploads.');const pack=requireRunProject(JSON.parse(run.pack_json));const raw=await jsonBody(request);requireValue(object(raw),'A document object is required.');identity(raw);
@@ -79,20 +81,24 @@ async function uploadDocument(request:Request,env:Env,store:Store,run:RunRow):Pr
  await store.event(run.id,String(raw.fingerprint),'upload','completed',{failed:decision!==null});return response({uploaded:true,idempotent:false},201);
 }
 async function start(env:Env,store:Store,run:RunRow,authentication:'legacy'|'cloudflare'):Promise<Response>{
- await requireReady(env,authentication);requireValue(['uploading','running'].includes(run.status),'This run cannot start again.');const docs=await store.documents(run.id);requireValue(docs.length===run.expected_count,'Every document must be uploaded before starting.');
+ run=await store.run(run.id);
+ if(!['uploading','running'].includes(run.status))return response({started:0,pending:0,status:run.status});
+ await requireReady(env,authentication);const docs=await store.documents(run.id);requireValue(docs.length===run.expected_count,'Every document must be uploaded before starting.');
  if(run.status==='uploading'){
   const mixed=new Set(docs.map(doc=>doc.extractor_version).filter(Boolean)).size>1;
   if(mixed)for(const doc of docs)await env.DB.prepare('UPDATE documents SET notes_json=? WHERE run_id=? AND fingerprint=?').bind(JSON.stringify(['N_EXTRACTOR_VERSION_MIXED']),run.id,doc.fingerprint).run();
   await env.DB.prepare("UPDATE runs SET status='running' WHERE id=? AND status='uploading'").bind(run.id).run();
  }
- let started=0;for(const doc of docs.filter(doc=>doc.status!=='complete'&&doc.workflow_id===null).slice(0,50)){
-  const id=await workflowInstanceId(run.id,doc.fingerprint);
-  try{await env.DOCUMENT_WORKFLOW.create({id,params:{runId:run.id,fingerprint:doc.fingerprint}});await env.DB.prepare('UPDATE documents SET workflow_id=? WHERE run_id=? AND fingerprint=?').bind(id,run.id,doc.fingerprint).run();started++;}
-  catch(error){await store.halt(run.id,{code:'E_WORKFLOW_START',detail:failure(error).message});throw new ServerFailure('E_WORKFLOW_START','blocker','A document workflow could not be started. The run has halted.');}
- }
- const pending=(await store.documents(run.id)).filter(doc=>doc.status!=='complete'&&doc.workflow_id===null).length;
- if(docs.every(doc=>doc.status==='complete'))await env.DB.prepare("UPDATE runs SET status='complete' WHERE id=? AND status='running'").bind(run.id).run();
- return response({started,pending});
+ return response(await dispatchRunDocuments({
+  readStatus:async()=>(await store.run(run.id)).status,
+  readDocuments:()=>store.documents(run.id),
+  create:async fingerprint=>{
+   const id=await workflowInstanceId(run.id,fingerprint);
+   try{await env.DOCUMENT_WORKFLOW.create({id,params:{runId:run.id,fingerprint}});await env.DB.prepare('UPDATE documents SET workflow_id=? WHERE run_id=? AND fingerprint=?').bind(id,run.id,fingerprint).run();}
+   catch(error){await store.halt(run.id,{code:'E_WORKFLOW_START',detail:failure(error).message});throw new ServerFailure('E_WORKFLOW_START','blocker','A document workflow could not be started. The run has halted.');}
+  },
+  markComplete:async()=>{await env.DB.prepare("UPDATE runs SET status='complete' WHERE id=? AND status='running' AND expected_count=(SELECT COUNT(*) FROM documents WHERE run_id=? AND status='complete')").bind(run.id,run.id).run();},
+ }));
 }
 async function corrections(request:Request,env:Env,store:Store,run:RunRow,actor:string):Promise<Response>{
  const raw=await jsonBody(request);requireValue(object(raw),'A correction listing is required.');requireValue(Object.keys(raw).every(key=>['files','checkedFolders','sidecarPaths','folderDecisions'].includes(key)),'Only a local file listing may be submitted.');requireValue(Array.isArray(raw.files)&&Array.isArray(raw.checkedFolders)&&raw.checkedFolders.every(v=>typeof v==='string')&&Array.isArray(raw.sidecarPaths)&&raw.sidecarPaths.every(v=>typeof v==='string'),'Invalid correction listing.');
@@ -134,7 +140,7 @@ async function handleRequest(request:Request,env:Env & {ASSETS?:Fetcher},cloudfl
   }
   const match=/^\/api\/runs\/([^/]+)(?:\/(.*))?$/.exec(path);if(!match)throw new ServerFailure('E_ROUTE','request','This API route does not exist.',404);
   const run=await authorizeRun(store,match[1],actor),action=match[2];
-  if(!action&&request.method==='GET'){const documents=await store.documents(run.id),spend=await store.spendByVendor(run.id),events=(await env.DB.prepare('SELECT * FROM events WHERE run_id=? ORDER BY created_at').bind(run.id).all()).results;return response({run:{id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:documents.filter(doc=>doc.status==='complete').length,mode:run.mode,textHeld:!!run.text_held,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),threshold:run.threshold},documents:documents.map(doc=>({...doc,decision:doc.decision_json?JSON.parse(doc.decision_json):null})),events});}
+  if(!action&&request.method==='GET'){const documents=await store.documents(run.id),spend=await store.spendByVendor(run.id),events=(await env.DB.prepare('SELECT * FROM events WHERE run_id=? ORDER BY created_at').bind(run.id).all()).results;return response({run:{id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:documents.filter(doc=>doc.status==='complete').length,mode:run.mode,textHeld:!!run.text_held,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),threshold:run.threshold,stopReason:await readRunStopReason(store,run)},documents:documents.map(doc=>({...doc,decision:doc.decision_json?JSON.parse(doc.decision_json):null})),events});}
   const evidence=/^documents\/([^/]+)\/evidence$/.exec(action??'');
   if(evidence&&request.method==='GET')return response(await documentEvidence(store,run.id,evidence[1],actor));
   if(action==='documents'&&request.method==='POST')return await uploadDocument(request,env,store,run);

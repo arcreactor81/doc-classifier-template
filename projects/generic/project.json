@@ -24,7 +24,7 @@
       "topPageFraction": 0.2,
       "gapRatio": 1.5
     },
-    "confidenceStatePolicy": "untrimmed-structured-state-v2",
+    "confidenceStatePolicy": "full-text-outline-v3",
     "decisionNotePolicy": "full-state-structural-info-v2"
   },
   "pins": {
@@ -37,13 +37,13 @@
     "reader": {
       "id": "gpt-6-sol",
       "date": "2026-09-23",
-      "reason": "Owner approved GPT-6 Sol as the reader for new runs; historical configurations remain valid.",
+      "reason": "Owner approved Sol after the paired reader comparison showed identical outcomes and 13.3% lower selected-completion cost, with no demonstrated quality difference.",
       "policy": "owner_approved_alias"
     },
     "recovery": {
-      "id": "gpt-5.6-luna",
-      "date": "2026-09-22",
-      "reason": "Owner explicitly authorized family-name calls without pins.",
+      "id": "gpt-6-luna",
+      "date": "2026-09-23",
+      "reason": "Owner explicitly approved GPT-6 Luna for heading recovery after the two-document comparison: both matched all nine provisional reference headings; GPT-6 cost 50.6% less but had one ambiguous extra line. This is not a general quality claim.",
       "policy": "owner_approved_alias"
     }
   },
@@ -76,8 +76,8 @@
             "numerator": "2"
           }
         },
-        "inputNanodollarsPerMillion": "200000000",
-        "outputNanodollarsPerMillion": "1200000000"
+        "inputNanodollarsPerMillion": "100000000",
+        "outputNanodollarsPerMillion": "500000000"
       },
       "confidence": {
         "outputNanodollarsPerMillion": "0",
@@ -112,8 +112,8 @@
             "numerator": "2"
           }
         },
-        "inputNanodollarsPerMillion": "200000000",
-        "outputNanodollarsPerMillion": "1200000000"
+        "inputNanodollarsPerMillion": "100000000",
+        "outputNanodollarsPerMillion": "500000000"
       },
       "confidence": {
         "outputNanodollarsPerMillion": "0",
@@ -138,7 +138,8 @@
     "source": [
       "https://developers.openai.com/api/docs/pricing",
       "https://docs.typesafe.ai/models",
-      "https://developers.openai.com/api/docs/models/gpt-6-sol"
+      "https://developers.openai.com/api/docs/models/gpt-6-sol",
+      "https://developers.openai.com/api/docs/models/gpt-6-luna"
     ],
     "verifiedAt": "2026-09-23"
   }
