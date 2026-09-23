@@ -17,6 +17,7 @@ Design references to revisit include **Dippa Inhouse** (the reference supplied b
 - Improve typography, spacing, visual hierarchy, responsive layouts and purposeful motion while preserving light/dark modes, reduced-motion support and clear outcome colours.
 - Explain what each step does, why it asks for a file or folder, where documents and results go, and what the user should do next.
 - Replace or explain technical terms in the main workflow. **"Manifest JSON" is a concrete example of wording many end users will not understand.** Explore plain labels such as "results file", with implementation details available only when useful.
+- Place progress, success and error feedback directly below the action that triggered it, in the user's reading order. Submission feedback should remain next to its button rather than appearing above the form.
 - Reduce avoidable handoffs and make the journey understandable without outside coaching. Validate the revised experience with nontechnical users, using real progress and measured performance.
 
 **Sequence:** complete native-browser and independent-deployment acceptance first, then revisit the visual design and language as part of product enhancements. GEPA and other enhancement ideas remain separate follow-up work. This roadmap entry does not change classification behavior.
