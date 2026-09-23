@@ -1,10 +1,11 @@
+import type {DecisionNotePolicy} from '../domain/decision.ts';
 import { validateProjectCopy } from '../ui/project-copy.ts';
 import type { TokenRates } from '../cost/cost.ts';
 export interface DocumentType { id:string; name:string; what:string; not_for:string; examples:string[] }
 export interface TypeFile { types:DocumentType[]; none_of_these:{name:string;what:string} }
 export interface ModelPin { id:string; date:string; reason:string; policy:'versioned'|'owner_approved_alias' }
 export interface ProjectSettings {
- confidenceStatePolicy:'untrimmed-structured-state-v2'; digestBudget?:number|null; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
+ decisionNotePolicy:DecisionNotePolicy; confidenceStatePolicy:'untrimmed-structured-state-v2'; digestBudget?:number|null; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
  recoveryMinimumHeadings:number; minimumFiledCount:number; batchCutoff:number; defaultMode:'interactive'|'batch';
  pdfPolicy:{largeFontRatio:number;maxHeadingCharacters:number;topPageFraction:number;gapRatio:number};
 }
@@ -65,6 +66,7 @@ export function validateProject(value:unknown):ConfigIssue[]{
  else{
   for(const field of ['readerMaxOutputTokens','recoveryMaxOutputTokens','recoveryMinimumHeadings','minimumFiledCount','batchCutoff'])
    if(!Number.isSafeInteger(settings[field])||Number(settings[field])<1)issue('settings.'+field,'A positive integer is required.');
+  if(!['all-notes-review-v1','full-state-structural-info-v2'].includes(String(settings.decisionNotePolicy))||settings.decisionNotePolicy==='full-state-structural-info-v2'&&settings.confidenceStatePolicy!=='untrimmed-structured-state-v2')issue('settings.decisionNotePolicy','Select an explicit compatible decision note policy.');
   if(settings.confidenceStatePolicy!=='untrimmed-structured-state-v2')issue('settings.confidenceStatePolicy','Select the explicit untrimmed structured-state policy.');
   if(!['low','medium'].includes(String(settings.readerEffort)))issue('settings.readerEffort','Select low or medium.');
   if(!['interactive','batch'].includes(String(settings.defaultMode)))issue('settings.defaultMode','Select interactive or batch.');
@@ -120,4 +122,18 @@ export function projectInteractiveSeconds(documentCount:number,readerTokens:numb
  const {confidenceRequestsPerMinute,readerRequestsPerMinute,readerTokensPerMinute}=limits;
  if(confidenceRequestsPerMinute===null||readerRequestsPerMinute===null||readerTokensPerMinute===null)return null;
  return Math.ceil(Math.max(documentCount/confidenceRequestsPerMinute,documentCount/readerRequestsPerMinute,readerTokens/readerTokensPerMinute)*60);
+}
+
+/** Absence in already-frozen historical run packs means the previously implemented all-notes rule. Never use for new project/quote validation. */
+export function runDecisionNotePolicy(settings:unknown):DecisionNotePolicy{
+ if(!record(settings))throw new Error('Frozen run settings are missing.');
+ if(!Object.hasOwn(settings,'decisionNotePolicy'))return'all-notes-review-v1';
+ if(settings.decisionNotePolicy!=='all-notes-review-v1'&&settings.decisionNotePolicy!=='full-state-structural-info-v2')throw new Error('Frozen run note policy is invalid.');
+ if(settings.decisionNotePolicy==='full-state-structural-info-v2'&&settings.confidenceStatePolicy!=='untrimmed-structured-state-v2')throw new Error('Frozen run note policy requires full structured state.');
+ return settings.decisionNotePolicy;
+}
+export function requireRunProject(value:unknown):ProjectPack{
+ if(!record(value)||!record(value.settings))return requireProject(value);
+ const decisionNotePolicy=runDecisionNotePolicy(value.settings);
+ return requireProject({...value,settings:{...value.settings,decisionNotePolicy}});
 }

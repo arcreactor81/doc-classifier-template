@@ -1,4 +1,4 @@
-import { requireProject } from '../config/project.ts';
+import { requireRunProject } from '../config/project.ts';
 import { sumVendorSpend,type Spend } from '../cost/run-budget.ts';
 import type { CheckpointStore } from './checkpoint.ts';
 import { ServerFailure } from './errors.ts';
@@ -110,7 +110,7 @@ export class Store {
   // Reconcile known submitted jobs before uploaded R2 text is removed or closure is reported successful.
   const submitted=await this.env.DB.prepare("SELECT id,remote_batch_id FROM batch_jobs j WHERE j.run_id=? AND j.remote_batch_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM events e WHERE e.run_id=j.run_id AND e.stage='batch_accounting' AND e.kind='reconciled' AND json_extract(e.details_json,'$.batchKey')=j.id)").bind(runId).all<{id:string;remote_batch_id:string}>();
   if(submitted.results.length){
-   const {reconcileSubmittedBatch}=await import('./batch-runner.ts');const pack=requireProject(JSON.parse(run.pack_json));
+   const {reconcileSubmittedBatch}=await import('./batch-runner.ts');const pack=requireRunProject(JSON.parse(run.pack_json));
    for(const job of submitted.results)await reconcileSubmittedBatch(this,run,pack,job.id,job.remote_batch_id);
   }
   const rows=await this.env.DB.prepare('SELECT key FROM artifacts WHERE run_id=? AND contains_text=1 AND deleted_at IS NULL').bind(runId).all<{key:string}>();

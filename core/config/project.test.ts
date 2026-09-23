@@ -1,6 +1,7 @@
+import generic from '../../projects/generic/project.json' with {type:'json'};
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateTypes, validateProject, typeVersion } from './project.ts';
+import { validateTypes, validateProject, typeVersion,requireProject,requireRunProject,runDecisionNotePolicy } from './project.ts';
 const types={types:[{id:'type_a',name:'Category A',what:'Material about alpha',not_for:'Material about beta',examples:['A synthetic example']}],none_of_these:{name:'None of these',what:'No defined type applies'}};
 test('type validation requires complete unique nonreserved definitions',()=>{
  assert.deepEqual(validateTypes(types),[]);
@@ -58,3 +59,19 @@ test('run-selected budgets replace project spending approval and reader billing-
 });
 
 test('untrimmed state policy is explicit and retired counter fields never gate readiness',()=>{const errors=(settings:unknown)=>validateProject({settings}).filter(i=>i.path==='settings.confidenceStatePolicy'||i.path==='settings.digestBudget'||i.path.startsWith('tokenizers'));assert.deepEqual(errors({confidenceStatePolicy:'untrimmed-structured-state-v2'}),[]);assert.ok(errors({}).some(i=>i.path==='settings.confidenceStatePolicy'));});
+
+test('new project packs require explicit note policy and reject unknown policies',()=>{
+ const check=(settings:unknown)=>validateProject({settings}).filter(i=>i.path==='settings.decisionNotePolicy');
+ assert.ok(check({confidenceStatePolicy:'untrimmed-structured-state-v2'}).length);
+ for(const decisionNotePolicy of ['all-notes-review-v1','full-state-structural-info-v2'])assert.deepEqual(check({confidenceStatePolicy:'untrimmed-structured-state-v2',decisionNotePolicy}),[]);
+ for(const decisionNotePolicy of [null,'future'])assert.ok(check({confidenceStatePolicy:'untrimmed-structured-state-v2',decisionNotePolicy}).length);
+ assert.ok(check({confidenceStatePolicy:'named-fields-json-v1',decisionNotePolicy:'full-state-structural-info-v2'}).length);
+});
+
+test('only frozen historical run loading resolves absent note policy, without mutating stored packs',()=>{
+ const frozen=structuredClone({...generic,typeFile:types,structuralVocabulary:[]}) as Record<string,any>;delete frozen.settings.decisionNotePolicy;const before=JSON.stringify(frozen);
+ assert.throws(()=>requireProject(frozen),/configuration/);const historical=requireRunProject(frozen);assert.equal(historical.settings.decisionNotePolicy,'all-notes-review-v1');assert.equal(JSON.stringify(frozen),before);
+ frozen.settings.decisionNotePolicy='full-state-structural-info-v2';assert.equal(requireProject(frozen).settings.decisionNotePolicy,'full-state-structural-info-v2');assert.equal(requireRunProject(frozen).settings.decisionNotePolicy,'full-state-structural-info-v2');
+ for(const bad of [undefined,null,'future']){frozen.settings.decisionNotePolicy=bad;assert.throws(()=>requireRunProject(frozen),/policy/);}
+ assert.equal(runDecisionNotePolicy({}),'all-notes-review-v1');
+});

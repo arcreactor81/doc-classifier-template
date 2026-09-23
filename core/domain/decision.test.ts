@@ -105,3 +105,25 @@ test('all combinations obey first-match rules deterministically without modifyin
   }
   assert.equal(combinations, 3072);
 });
+
+test('full-state structural policy retains every approved note while preserving R1-R5 boundaries',()=>{
+ const structural=['N_NO_OUTLINE','N_NO_STRUCTURAL_SECTIONS','N_OUTLINE_RECOVERED'];
+ const cases:Partial<DecisionInput>[]=[{}, {confidence:{choice:'type_a',certainty:0.899999,noul:{type_a:0.5,type_b:0}}},{readerYes:['type_a','type_b']},{readerYes:[],confidence:{choice:'none_of_these',certainty:1,noul:{type_a:0,type_b:0.499999}}},{confidence:{choice:'type_a',certainty:1,noul:{type_a:0.499999,type_b:0}}}];
+ for(let mask=0;mask<8;mask++){const notes=structural.filter((_,i)=>mask&(1<<i));for(const override of cases){const legacy=decide(input(override));const result=decide(input({...override,notes,notePolicy:'full-state-structural-info-v2',confidenceStatePolicy:'untrimmed-structured-state-v2'}));assert.equal(result.ruleId,legacy.ruleId);assert.deepEqual(result.notes,notes);}}
+});
+test('new structural policy never bypasses failure or unknown-note precedence',()=>{
+ const policy={notePolicy:'full-state-structural-info-v2' as const,confidenceStatePolicy:'untrimmed-structured-state-v2'};
+ assert.equal(decide(input({...policy,notes:['N_NO_OUTLINE','N_OTHER'],confidence:undefined,readerYes:undefined})).ruleId,'R0n');
+ assert.equal(decide(input({...policy,notes:['N_NO_OUTLINE'],failures:['E_RECOVERY'],confidence:undefined,readerYes:undefined})).ruleId,'R0');
+ assert.equal(decide(input({...policy,notes:['N_EXTRACTOR_VERSION_MIXED'],confidence:undefined,readerYes:undefined})).ruleId,'R0n');
+ assert.throws(()=>decide(input({...policy,notes:['N_NO_OUTLINE'],confidence:undefined,readerYes:undefined})),/confidence/);
+});
+test('legacy and absent policies keep structural notes as review and unknown/new-incompatible policies reject',()=>{
+ for(const notePolicy of [undefined,'all-notes-review-v1'] as const)assert.equal(decide(input({notes:['N_OUTLINE_RECOVERED'],notePolicy})).ruleId,'R0n');
+ assert.throws(()=>decide(input({notePolicy:'full-state-structural-info-v2'})),/policy/);
+ assert.throws(()=>decide(input({notePolicy:'future' as never})),/policy/);
+});
+
+test('new informational-note policy preserves exact zero/one certainty and midpoint Noul boundaries',()=>{
+ for(const threshold of [0,0.9,1])for(const noul of [0.499999,0.5,1]){const result=decide(input({notePolicy:'full-state-structural-info-v2',confidenceStatePolicy:'untrimmed-structured-state-v2',notes:['N_NO_OUTLINE','N_OUTLINE_RECOVERED'],threshold,confidence:{choice:'type_a',certainty:threshold,noul:{type_a:noul,type_b:0}}}));assert.equal(result.ruleId,noul<0.5?'R5':'R1');}
+});

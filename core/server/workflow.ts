@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint,type WorkflowEvent,type WorkflowStep } from 'cloudflare:workers';
 import { NonRetryableError } from 'cloudflare:workflows';
-import { requireProject } from '../config/project.ts';
+import { requireRunProject } from '../config/project.ts';
 import { buildStructuredState,type StructuredStateResult } from '../digest/structured-state.ts';
 import { verifyRecoveredHeadings } from '../digest/recovery.ts';
 import { buildConfidenceRequest,buildReaderRequest,buildRecoveryRequest,decodeConfidence,decodeReader,decodeRecovery } from '../vendors/requests.ts';
@@ -17,7 +17,7 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
   const {runId,fingerprint}=event.payload,store=new Store(this.env),run=await store.run(runId);
   const runner=new Runner(this.env,run,fingerprint,step);
   try{
-   await guard(this.env,store,runId);const pack=requireProject(JSON.parse(run.pack_json));
+   await guard(this.env,store,runId);const pack=requireRunProject(JSON.parse(run.pack_json));
    const initial=await store.document(runId,fingerprint);if(initial.decision_json)return;
    if(!initial.input_key)throw new ServerFailure('E_INPUT_MISSING','blocker','Uploaded text is missing.');
    await runner.stage('started',async()=>{await this.env.DB.prepare("UPDATE documents SET status='running' WHERE run_id=? AND fingerprint=? AND status='uploaded'").bind(runId,fingerprint).run();return{inputKey:initial.input_key};});
@@ -48,7 +48,7 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
    const readerKey=run.mode==='batch'?await batchReader(runner,pack,readerRequest):await runner.vendor(readerRequest,pack,raw=>decodeReader(raw,pack.pins.reader,pack.typeFile.types.map(type=>type.id),upload.fullText));
    await this.env.DB.prepare('UPDATE documents SET reader_key=? WHERE run_id=? AND fingerprint=?').bind(readerKey,runId,fingerprint).run();
    const confidence=(await store.json<{value:ConfidenceOutput}>(confidenceKey)).value,reader=(await store.json<{value:ReaderOutput}>(readerKey)).value;
-   const decisionKey=await runner.stage('decide',async()=>decide({typeIds:pack.typeFile.types.map(type=>type.id),threshold:run.threshold,failures:[],notes:[...new Set(notes)],confidence:{choice:confidence.choice,certainty:confidence.confidence,noul:confidence.nouls},readerYes:reader.verdicts.filter(verdict=>verdict.is_type).map(verdict=>verdict.type_id)}));
+   const decisionKey=await runner.stage('decide',async()=>decide({notePolicy:pack.settings.decisionNotePolicy,confidenceStatePolicy:pack.settings.confidenceStatePolicy,typeIds:pack.typeFile.types.map(type=>type.id),threshold:run.threshold,failures:[],notes:[...new Set(notes)],confidence:{choice:confidence.choice,certainty:confidence.confidence,noul:confidence.nouls},readerYes:reader.verdicts.filter(verdict=>verdict.is_type).map(verdict=>verdict.type_id)}));
    const decision=await store.json<Decision>(decisionKey);
    await runner.stage('record-decision',async()=>{const updated=await this.env.DB.prepare("UPDATE documents SET status='complete',decision_json=? WHERE run_id=? AND fingerprint=? AND EXISTS(SELECT 1 FROM runs WHERE id=? AND status='running')").bind(JSON.stringify(decision),runId,fingerprint,runId).run();if(updated.meta.changes!==1)throw new ServerFailure('E_RUN_STOPPED','blocker','The run stopped before this decision could be recorded.');return{decisionKey};});
    await finalize(store,runId);return{decisionKey};
@@ -56,8 +56,8 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
    const issue=failure(error);
    if(issue.kind==='blocker')await store.halt(runId,{code:issue.code,message:issue.message});
    else{
-    const pack=requireProject(JSON.parse(run.pack_json));const doc=await store.document(runId,fingerprint);
-    const decision=decide({typeIds:pack.typeFile.types.map(type=>type.id),threshold:run.threshold,failures:[issue.code],notes:JSON.parse(doc.notes_json)});
+    const pack=requireRunProject(JSON.parse(run.pack_json));const doc=await store.document(runId,fingerprint);
+    const decision=decide({notePolicy:pack.settings.decisionNotePolicy,confidenceStatePolicy:pack.settings.confidenceStatePolicy,typeIds:pack.typeFile.types.map(type=>type.id),threshold:run.threshold,failures:[issue.code],notes:JSON.parse(doc.notes_json)});
     await this.env.DB.prepare("UPDATE documents SET status='complete',failure_json=?,decision_json=? WHERE run_id=? AND fingerprint=?").bind(JSON.stringify({code:issue.code,message:issue.message}),JSON.stringify(decision),runId,fingerprint).run();
     await store.event(runId,fingerprint,'document','failed',{code:issue.code,message:issue.message});await finalize(store,runId);
    }

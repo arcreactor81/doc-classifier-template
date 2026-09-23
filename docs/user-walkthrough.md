@@ -63,3 +63,5 @@ Read the move summary and proposed changes. **Download proposals JSON** saves su
 Read the specific headline and action first; **Technical details** preserves the recorded information for your administrator. To continue an interrupted upload in the same browser profile, use **Resume confirmed upload**. For documents that finished with failures, **Retry failed documents in a new run** asks you to select their originals and confirm a new budget; it is never automatic.
 
 **Close run and delete uploaded text** is for deliberately closing a run, including one you are abandoning. Keep the originals. Do not close an unfinished run if you still want it to continue processing.
+
+Outline notes remain visible. With the full-text policy, missing or recovered headings alone do not require review; automatic filing still requires both systems to agree at or above the certainty threshold. Other notes and processing failures retain their review or failure outcome. Earlier runs keep their recorded policy and results.

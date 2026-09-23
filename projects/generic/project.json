@@ -24,7 +24,8 @@
       "topPageFraction": 0.2,
       "gapRatio": 1.5
     },
-    "confidenceStatePolicy": "untrimmed-structured-state-v2"
+    "confidenceStatePolicy": "untrimmed-structured-state-v2",
+    "decisionNotePolicy": "full-state-structural-info-v2"
   },
   "pins": {
     "confidence": {

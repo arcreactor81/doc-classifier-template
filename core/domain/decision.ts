@@ -1,5 +1,9 @@
 /** Deterministic first-match decision table from DESIGN.md §5.6. */
+export type DecisionNotePolicy='all-notes-review-v1'|'full-state-structural-info-v2';
+export const STRUCTURAL_INFORMATION_NOTES:readonly string[]=['N_NO_OUTLINE','N_NO_STRUCTURAL_SECTIONS','N_OUTLINE_RECOVERED'];
 export interface DecisionInput {
+  readonly notePolicy?:DecisionNotePolicy;
+  readonly confidenceStatePolicy?:string;
   readonly typeIds: readonly string[];
   readonly threshold: number;
   readonly failures: readonly string[];
@@ -49,6 +53,9 @@ export function decide(input: DecisionInput): Decision {
   requireValid(isStringArray(input.failures), 'failures must be an explicit array of nonempty codes');
   requireValid(isStringArray(input.notes), 'notes must be an explicit array of nonempty codes');
 
+  const notePolicy=input.notePolicy===undefined?'all-notes-review-v1':input.notePolicy;
+  requireValid(notePolicy==='all-notes-review-v1'||notePolicy==='full-state-structural-info-v2','note policy must be recognized');
+  requireValid(notePolicy!=='full-state-structural-info-v2'||input.confidenceStatePolicy==='untrimmed-structured-state-v2','informational note policy requires the full-state policy');
   const details = {
     destinationFolder: 'human_review',
     failures: [...input.failures],
@@ -56,7 +63,7 @@ export function decide(input: DecisionInput): Decision {
   };
   // Failed/noted documents do not require vendor stages that could not complete.
   if (input.failures.length > 0) return { ...details, destinationFolder: 'could_not_process', ruleId: 'R0', outcome: 'could_not_process', reasonCode: 'stage_failed' };
-  if (input.notes.length > 0) return { ...details, ruleId: 'R0n', outcome: 'review', reasonCode: 'document_notes' };
+  if (input.notes.some(note=>notePolicy==='all-notes-review-v1'||!STRUCTURAL_INFORMATION_NOTES.includes(note))) return { ...details, ruleId: 'R0n', outcome: 'review', reasonCode: 'document_notes' };
 
   const { confidence, readerYes } = input;
   requireValid(confidence && typeof confidence === 'object', 'confidence check output is required');
