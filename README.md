@@ -1,12 +1,25 @@
 # Document classifier
 
-A generic document classification system. Chrome or Edge extracts originals locally. The cloud receives text and outline, runs an independent confidence check and reader, and applies deterministic filing rules. The deliverable is a manifest; the browser builds folders from the user's originals. Human corrections are folder moves and produce proposals, never automatic taxonomy changes.
+A generic document classification system. Chrome or Edge extracts originals locally. The cloud receives text and outline, runs an independent confidence check and reader, and applies deterministic filing rules. The system produces a results file (currently called a manifest) describing where each document belongs; the browser uses it to build folders from the user's originals. Human corrections are folder moves and produce proposals, never automatic taxonomy changes.
 
 Read [DESIGN.md](DESIGN.md) before changing behavior and [HANDOFF.md](HANDOFF.md) for verified facts, implementation decisions and open issues. [AGENTS.md](AGENTS.md) defines repository rules. Project-specific definitions belong in projects/<name>/.
 
 ## Current status
 
-The generic project is intentionally unconfigured. An empty taxonomy or disabled model calls must produce NOT READY. Local tokenizers are not required; actual usage comes from vendor responses. Each run asks for its own spending limits or explicit acknowledgement of unlimited spending. Test success does not mean the system is ready for live classification. No paid model inference has been used to validate the implementation.
+The generic project is intentionally unconfigured. An empty taxonomy or disabled model calls must produce NOT READY. Local tokenizers are not required; actual usage comes from vendor responses. Each run asks for its own spending limits or explicit acknowledgement of unlimited spending. Test success does not mean the system is ready for live classification.
+
+## Planned UI/UX improvements
+
+The current interface needs a more polished visual design and clearer explanations for people without a technical background. Functional checks alone do not establish that the experience is intuitive or meets the intended design standard.
+
+Design references to revisit include **Dippa Inhouse** (the reference supplied by the owner) and the **Astra launch site**. The desired direction is dynamic, lively, visually pleasing, cohesive and performant. These are references to study during the enhancement phase, not a claim that their design has already been adopted.
+
+- Improve typography, spacing, visual hierarchy, responsive layouts and purposeful motion while preserving light/dark modes, reduced-motion support and clear outcome colours.
+- Explain what each step does, why it asks for a file or folder, where documents and results go, and what the user should do next.
+- Replace or explain technical terms in the main workflow. **"Manifest JSON" is a concrete example of wording many end users will not understand.** Explore plain labels such as "results file", with implementation details available only when useful.
+- Reduce avoidable handoffs and make the journey understandable without outside coaching. Validate the revised experience with nontechnical users, using real progress and measured performance.
+
+**Sequence:** complete native-browser and independent-deployment acceptance first, then revisit the visual design and language as part of product enhancements. GEPA and other enhancement ideas remain separate follow-up work. This roadmap entry does not change classification behavior.
 
 ## Development
 
