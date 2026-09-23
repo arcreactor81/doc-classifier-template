@@ -19,6 +19,7 @@
   proposalNoExamples: 'No example candidates were proposed.', proposalNoExclusions: 'No exclusion candidates were proposed.', proposalNoTypes: 'No new types were proposed.',
 
   correctionManifestRequired: 'Choose the manifest for this run before choosing its corrected tree.',
+  correctionTreeHelp: 'Choose the whole output folder containing the category folders, not an individual category folder.',
   correctionRescan: 'The run or manifest changed. Choose the corrected tree again before reviewing corrections.',
   vendorNoResponse: 'The latest inference attempt received no HTTP response.', vendorResponseFailed: 'The latest inference attempt received an unsuccessful HTTP response.', vendorResponseReceived: 'An HTTP success response was recorded. This alone does not establish a valid model result.',
   latestVendorAttempt: 'Latest recorded attempt', vendorRole: 'Role', vendorHttpStatus: 'HTTP status', vendorAttemptTime: 'Recorded at', vendorUnknownSpend: 'Calls with unknown spend', vendorRoleReader: 'Reader', vendorRoleConfidence: 'Confidence check', vendorRoleRecovery: 'Outline recovery',

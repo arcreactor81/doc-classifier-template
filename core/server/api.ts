@@ -16,7 +16,7 @@ import { health,projectSource,requireReady } from './health.ts';
 import { EXECUTION_ATTEMPTS } from './capabilities.ts';
 import { Store,shaText,now,type RunRow } from './store.ts';
 import { object,requireValue,exact,identity,jsonBody,parseUpload,validateManifestReady,type Upload } from './contracts.ts';
-import { ServerFailure,failure,serverCopy } from './errors.ts';
+import { ServerFailure,failure,failureResponse,serverCopy } from './errors.ts';
 
 function response(value:unknown,status=200):Response{return Response.json(value,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});}
 async function authorizeRun(store:Store,id:string,actor:string):Promise<RunRow>{const run=await store.run(id);if(run.actor!==actor)throw new ServerFailure('E_RUN_FORBIDDEN','request','This run belongs to a different signed-in person.',403);return run;}
@@ -142,5 +142,5 @@ export async function handle(request:Request,env:Env):Promise<Response>{
    await env.DB.batch([env.DB.prepare('INSERT INTO threshold_history(id,correction_id,actor,created_at,threshold,direction) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),apply[1],actor,now(),raw.threshold,raw.direction),env.DB.prepare('UPDATE controls SET threshold=?,threshold_justification=? WHERE id=1').bind(raw.threshold,apply[1])]);return response({applied:true,threshold:raw.threshold,correctionId:apply[1]});
   }
   throw new ServerFailure('E_ROUTE','request','This API route does not exist.',404);
- }catch(error){const issue=failure(error);return response({error:{code:issue.code,kind:issue.kind,headline:issue.code==='E_INTERNAL'?serverCopy.headline:issue.message,action:serverCopy.action,details:{message:issue.code==='E_INTERNAL'?'An internal operation failed. The run must be reviewed before continuing.':issue.message}}},issue.status);}
+ }catch(error){const issue=failure(error);return response(failureResponse(issue),issue.status);}
 }

@@ -1,3 +1,16 @@
+export type CorrectionValidationCode = 'E_CORRECTION_PATH' | 'E_CORRECTION_ROOT_FOLDER' |
+  'E_CORRECTION_DUPLICATE_PATH' | 'E_CORRECTION_AMBIGUOUS_IDENTITY' | 'E_CORRECTION_MANIFEST_IDENTITY';
+
+/** Distinguishes rejected correction input from unexpected server failures. */
+export class CorrectionValidationError extends Error {
+  readonly code: CorrectionValidationCode;
+  constructor(code: CorrectionValidationCode, message: string) {
+    super(message);
+    this.name = 'CorrectionValidationError';
+    this.code = code;
+  }
+}
+
 /** A listing contains identities and paths only; original file contents stay local. */
 export interface CorrectionManifestEntry {
   fingerprint: string;
@@ -57,14 +70,14 @@ function validatePath(path: string, allowEmpty = false): void {
   if (allowEmpty && path === '') return;
   if (!path || path.includes('\\') || path.includes('\0') || path.includes(':') ||
     path.split('/').some(part => !part || part === '.' || part === '..')) {
-    throw new Error('Invalid relative path in correction listing.');
+    throw new CorrectionValidationError('E_CORRECTION_PATH', 'Invalid relative path in correction listing.');
   }
 }
 
 function uniqueIndex(entries: readonly CorrectionManifestEntry[], key: 'tag' | 'fingerprint') {
   const index = new Map<string, CorrectionManifestEntry>();
   for (const entry of entries) {
-    if (!entry[key] || index.has(entry[key])) throw new Error(`Missing or duplicate manifest ${key}.`);
+    if (!entry[key] || index.has(entry[key])) throw new CorrectionValidationError('E_CORRECTION_MANIFEST_IDENTITY', `Missing or duplicate manifest ${key}.`);
     index.set(entry[key], entry);
   }
   return index;
@@ -81,6 +94,7 @@ export function diffCorrection(input: CorrectionDiffInput): CorrectionDiff {
   const types = new Set(input.typeFolders);
   const checked = new Set(input.checkedFolders);
   const sidecars = new Set(input.sidecarPaths);
+  if (checked.has('')) throw new CorrectionValidationError('E_CORRECTION_ROOT_FOLDER', 'Choose the whole built tree before checking folders.');
   for (const path of [...input.typeFolders, ...input.checkedFolders, ...input.sidecarPaths]) validatePath(path);
   for (const entry of input.manifest) validatePath(entry.destinationFolder);
   const result: CorrectionDiff = {
@@ -93,9 +107,9 @@ export function diffCorrection(input: CorrectionDiffInput): CorrectionDiff {
   for (const file of input.files) {
     validatePath(file.folder, true);
     validatePath(file.filename);
-    if (file.filename.includes('/')) throw new Error('Invalid filename path in correction listing.');
+    if (file.filename.includes('/')) throw new CorrectionValidationError('E_CORRECTION_PATH', 'Invalid filename path in correction listing.');
     const path = file.folder ? `${file.folder}/${file.filename}` : file.filename;
-    if (paths.has(path)) throw new Error('Ambiguous duplicate path in correction listing.');
+    if (paths.has(path)) throw new CorrectionValidationError('E_CORRECTION_DUPLICATE_PATH', 'Ambiguous duplicate path in correction listing.');
     paths.add(path);
     if (file.filename === '.DS_Store' || file.filename === 'Thumbs.db' ||
       file.filename === '__MACOSX' || file.folder.split('/').includes('__MACOSX') || sidecars.has(path)) {
@@ -116,7 +130,7 @@ export function diffCorrection(input: CorrectionDiffInput): CorrectionDiff {
       result.unmatched.push({ ...file });
       continue;
     }
-    if (matchedTags.has(entry.tag)) throw new Error('Ambiguous correction: multiple files match one manifest entry.');
+    if (matchedTags.has(entry.tag)) throw new CorrectionValidationError('E_CORRECTION_AMBIGUOUS_IDENTITY', 'Ambiguous correction: more than one file matches one document.');
     matchedTags.add(entry.tag);
     const match: CorrectionMatch = {
       entry: { ...entry }, file: { ...file }, matchedBy: tagged ? 'tag' : 'fingerprint',

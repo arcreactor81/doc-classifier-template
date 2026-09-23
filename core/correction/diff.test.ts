@@ -89,3 +89,40 @@ test('invalid relative paths are rejected without silently normalising correctio
   const a = entry(1);
   assert.throws(() => run([a], [listing(a, '../type_a')]), /path/i);
 });
+
+test('two copies of one tagged document fail with an actionable identity error and preserve the listing', () => {
+  const item = entry(1, 'human_review', 'R0n');
+  const input = { manifest: [item], files: [listing(item), listing(item, types[0])], checkedFolders: [], typeFolders: types, sidecarPaths: [] };
+  const before = structuredClone(input);
+  assert.throws(() => diffCorrection(input), { name: 'CorrectionValidationError', code: 'E_CORRECTION_AMBIGUOUS_IDENTITY', message: /more than one file.*one document/i });
+  assert.deepEqual(input, before);
+});
+
+test('checking the selected tree root reports the whole-tree requirement without reinterpreting its label', () => {
+  const item = entry(1, 'human_review', 'R0n');
+  assert.throws(() => run([item], [listing(item, '')], ['']), { name: 'CorrectionValidationError', code: 'E_CORRECTION_ROOT_FOLDER', message: /whole.*tree/i });
+  const unchecked = run([item], [listing(item, '')]);
+  assert.equal(unchecked.moves[0].kind, 'unresolved_folder');
+  assert.deepEqual(unchecked.unknownFolders.map(folder => folder.folder), ['']);
+});
+
+test('invalid relative paths and duplicate paths have stable correction error codes', () => {
+  const item = entry(1);
+  for (const folder of ['../type_a', 'type_a\\child', '/type_a', 'type_a//child', 'type_a:child', 'type_a\0child']) {
+    assert.throws(() => run([item], [listing(item, folder)]), { name: 'CorrectionValidationError', code: 'E_CORRECTION_PATH' });
+  }
+  for (const filename of ['', 'part/file.pdf', '../file.pdf']) {
+    assert.throws(() => run([item], [{ ...listing(item), filename }]), { name: 'CorrectionValidationError', code: 'E_CORRECTION_PATH' });
+  }
+  assert.throws(() => run([item], [listing(item), listing(item)]), { name: 'CorrectionValidationError', code: 'E_CORRECTION_DUPLICATE_PATH' });
+  assert.throws(() => run([item], [], ['../type_a']), { name: 'CorrectionValidationError', code: 'E_CORRECTION_PATH' });
+  assert.throws(() => diffCorrection({ manifest: [item], files: [], checkedFolders: [], typeFolders: types, sidecarPaths: ['../sidecar.md'] }), { name: 'CorrectionValidationError', code: 'E_CORRECTION_PATH' });
+});
+
+test('missing or duplicated saved manifest identities remain a distinct blocking defect', () => {
+  const item = entry(1), other = entry(2);
+  for (const key of ['tag', 'fingerprint'] as const) {
+    assert.throws(() => run([{ ...item, [key]: '' }], []), { name: 'CorrectionValidationError', code: 'E_CORRECTION_MANIFEST_IDENTITY' });
+    assert.throws(() => run([item, { ...other, [key]: item[key] }], []), { name: 'CorrectionValidationError', code: 'E_CORRECTION_MANIFEST_IDENTITY' });
+  }
+});

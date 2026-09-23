@@ -34,7 +34,8 @@ function icon(name:string):SVGSVGElement{const svg=document.createElementNS('htt
 function button(label: string, action: () => Promise<void> | void, primary = false): HTMLButtonElement { const node = el('button', label, primary ? 'primary' : ''); node.type = 'button'; node.onclick = () => { node.disabled = true; Promise.resolve().then(action).catch(error=>{if(!(error instanceof DOMException && error.name==='AbortError'))showError(error);}).finally(() => { if (node.isConnected) node.disabled = false; }); }; return node; }
 function section(title: string, description?: string): HTMLElement { const box = el('section', undefined, 'card'); box.append(el('h2', title)); if (description) box.append(el('p', description, 'muted')); return box; }
 function technical(value: unknown, label: string = c.details): HTMLDetailsElement { const d = el('details'); d.append(el('summary', label), el('pre', typeof value === 'string' ? value : JSON.stringify(value, null, 2))); return d; }
-function showError(error: unknown): void { const host = document.querySelector('main'); if (!host) return; const presentation=errorPresentation(error);const box = section(presentation.headline, presentation.action); box.classList.add('error'); box.setAttribute('role', 'alert'); box.append(technical(presentation.technical)); host.prepend(box); }
+function clearActionError(host: Element): void { host.querySelector(':scope > .action-error')?.remove(); }
+function showError(error: unknown): void { const host = document.querySelector('main'); if (!host) return; const presentation=errorPresentation(error);const box = section(presentation.headline, presentation.action); box.classList.add('error','action-error'); box.setAttribute('role', 'alert'); box.append(technical(presentation.technical)); clearActionError(host); host.prepend(box); }
 async function api<T = Json>(path: string, body?: unknown): Promise<T> { const response = await fetch(path, body === undefined ? { credentials: 'same-origin' } : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw parseRequestFailure(response.status,await response.text()); return await response.json() as T; }
 function field(container: HTMLElement, label: string, type = 'text', value = ''): HTMLInputElement { const id = crypto.randomUUID(); const text = el('label', label); text.htmlFor = id; const input = el('input'); input.id = id; input.type = type; input.value = value; container.append(text, input); return input; }
 function stat(container: HTMLElement, label: string, value: string): void { const node = el('div', undefined, 'stat'); node.append(el('span', label), el('strong', value)); container.append(node); }
@@ -143,8 +144,8 @@ async function correct(main: HTMLElement): Promise<void> {
   let correctionManifest=loadedManifest;let scanVersion=0;let scannedVersion:number|null=null;
   function invalidate():void{scanVersion++;scannedVersion=null;listing=[];sidecarPaths=[];checked.clear();decisions.clear();folders.replaceChildren(el('legend',c.checked));output.replaceChildren(el('p',c.correctionRescan));}
   run.addEventListener('input',invalidate);
-  box.append(el('p',c.correctionManifestRequired));
-  choices.append(button(c.manifest,async()=>{invalidate();const manifest=await chooseManifest();correctionManifest=manifest;run.value=manifest.runId;}),button(c.tree,async()=>{
+  box.append(el('p',c.correctionManifestRequired),el('p',c.correctionTreeHelp));
+  choices.append(button(c.manifest,async()=>{invalidate();const manifest=await chooseManifest();correctionManifest=manifest;run.value=manifest.runId;clearActionError(main);}),button(c.tree,async()=>{
     if(!correctionManifest||correctionManifest.runId!==run.value)throw new Error(c.correctionManifestRequired);
     invalidate();const version=scanVersion,manifest=correctionManifest,runId=run.value;
     const tree=await pickDirectory();const nextListing:Json[]=[],nextSidecars:string[]=[],nextFolders=new Set<string>();const tags=manifest.entries.map(e=>e.tag);
@@ -153,7 +154,7 @@ async function correct(main: HTMLElement): Promise<void> {
     if(version!==scanVersion||manifest!==correctionManifest||runId!==run.value)throw new Error(c.correctionRescan);
     listing=nextListing;sidecarPaths=nextSidecars;scannedVersion=version;
     for(const prefix of nextFolders){const label=el('label');const input=el('input');input.type='checkbox';label.append(input,document.createTextNode(prefix||tree.name));folders.append(label);checked.set(prefix,input);}
-    output.replaceChildren(el('p',`${c.listing}: ${listing.length}`));
+    output.replaceChildren(el('p',`${c.listing}: ${listing.length}`));clearActionError(main);
   }));const decisions=new Map<string,FolderDecision['action']>();
   async function submitCorrection():Promise<void>{
     if(!correctionManifest||correctionManifest.runId!==run.value)throw new Error(c.correctionManifestRequired);
@@ -193,7 +194,7 @@ async function correct(main: HTMLElement): Promise<void> {
     for(const candidate of proposals.notFor){const card=el('article',undefined,'card');card.append(el('h4',candidate.fromType+' ? '+candidate.toType),el('p',candidate.candidate),el('p',c.proposalEvidence+': '+candidate.evidenceTags.join(', ')));if(candidate.typeVersion)card.append(el('p',c.proposalTypeVersion+': '+candidate.typeVersion));if(candidate.definitions)card.append(technical(candidate.definitions,c.proposalFrozenDefinitions));review.append(card);}
     review.append(el('h3',c.proposedTypes));if(!proposals.newTypes.length)review.append(el('p',c.proposalNoTypes));
     for(const candidate of proposals.newTypes){const card=el('article',undefined,'card');card.append(el('h4',candidate.name),el('p',candidate.id?c.proposalIdentifier+': '+candidate.id:c.proposalIdentifierMissing),el('p',c.proposalIncompleteType));for(const example of candidate.examples)card.append(exampleCard(example));review.append(card);}
-    output.append(review,technical(result));
+    output.append(review,technical(result));clearActionError(main);
   }
   const analyze=button(c.analyze,submitCorrection,true);box.append(choices,folders,analyze,output);main.append(box);
 }
