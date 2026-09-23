@@ -176,3 +176,13 @@ Office extractor1.0.3 reads explicit Word/DrawingML text carriers and skips XML 
 Permanent OpenAI quota/billing429 errors now stop with an actionable blocker after raw accounting, without repeating inference. Temporary Batch metadata-poll429 responses receive bounded durable read-only retries. Batch result-file GET429 retry remains an explicit reliability gap; no uncertain upload/create is replayed.
 
 Combined implementation gate passed228tests, both TypeScript checks and UI build. Frontend acceptance included15layout/theme/reduced-motion checks,14confirmation,22correction/health,19realOPFSbuilder,11error/evidence,16proposal and5mode checks. Six screenshots were visually reviewed. These are fixture/local acceptance checks, not new model-quality results or a fresh-owner install claim.
+
+## Product walkthrough and coordinated waiting (2026-09-23)
+
+Added the user walkthrough covering folder selection, per-run budgets, recorded evidence, deliberate manifest closure, local folder building and correction proposals. Confirmed upload progress stays visible while the request is working. Open evidence panels refresh incomplete results during run polling, while immutable terminal results remain cached.
+
+Recorded provider cooldowns are shared through D1 and displayed only while applicable; stale shorter events cannot hide an active longer wait. Configured request admission and temporary read retry paths retain existing guards and unchanged request bytes. New installations opt into a distinct Workflow-name marker: the cloud deploy script derives a stable valid name from selected Worker/binding identities in a temporary sibling config, preserving relative paths and removing that file after success or failure. Existing names and configurations do not migrate silently. Migration0005 provides the cooldown ledger.
+
+Private implementation verification passed258tests. The public template intentionally excludes the existing-owner deployment driver and its2tests; its own release gate is recorded separately. No private validation corpus results, reviewer records, spending ledger or original operational handoff were exported. These improvements establish product mechanics, not model-quality, bake-off or fresh-account acceptance claims.
+
+Final public export verification: 256 tests passed, both TypeScript checks passed and the production UI build passed. The two private-only owner-deploy tests account for the difference from the 258-test private gate. Portable package scripts and other configuration remain unchanged; only the explicitly authorized new-install Workflow marker changed.

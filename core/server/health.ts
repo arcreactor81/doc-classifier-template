@@ -20,6 +20,7 @@ export async function health(env:Env):Promise<Record<string,unknown>>{
   if(!env.DB)throw new Error('DB binding is absent.');
   const probe=`deployment-${env.BUILD_COMMIT}`;
   await env.DB.prepare('INSERT OR IGNORE INTO probes(id,created_at) VALUES(?,?)').bind(probe,now()).run();
+  await env.DB.prepare('SELECT scope FROM provider_cooldowns LIMIT 1').first();
   const control=await env.DB.prepare('SELECT * FROM controls WHERE id=1').first<{kill:number;threshold:number;threshold_justification:string}>();
   if(!control)throw new Error('Controls were not initialized.');
   if(control.kill)add('E_KILL_SWITCH','The kill switch is set.');

@@ -3,12 +3,13 @@ import type { DigestInput, DigestHeading, DigestTable, DigestBlock } from '../di
 
 type XmlNode = Record<string, unknown>;
 const namespaces=new WeakMap<XmlNode,string>();
+const namespaceScopes=new WeakMap<XmlNode,Readonly<Record<string,string>>>();
 export interface ParsedDocument { fullText: string; outline: DigestInput }
 function parse(xml: string): XmlNode[] {
   const valid = XMLValidator.validate(xml);
   if (valid !== true) throw new Error(`Invalid document XML: ${valid.err.code}`);
   const nodes=new XMLParser({ preserveOrder: true, ignoreAttributes: false, removeNSPrefix: false, trimValues: false, parseTagValue: false, processEntities: true }).parse(xml) as XmlNode[];
-  function visit(items:XmlNode[],inherited:Record<string,string>):void{for(const node of items){const scope={...inherited};for(const [key,value]of Object.entries((node[':@']??{}) as Record<string,string>)){if(key==='@_xmlns')scope['']=value;else if(key.startsWith('@_xmlns:'))scope[key.slice(8)]=value;}const qualified=rawTag(node),prefix=qualified.includes(':')?qualified.split(':')[0]:'';namespaces.set(node,scope[prefix]??'');visit(children(node),scope);}}
+  function visit(items:XmlNode[],inherited:Record<string,string>):void{for(const node of items){const scope={...inherited};for(const [key,value]of Object.entries((node[':@']??{}) as Record<string,string>)){if(key==='@_xmlns')scope['']=value;else if(key.startsWith('@_xmlns:'))scope[key.slice(8)]=value;}const qualified=rawTag(node),prefix=qualified.includes(':')?qualified.split(':')[0]:'';namespaces.set(node,scope[prefix]??'');namespaceScopes.set(node,scope);visit(children(node),scope);}}
   visit(nodes,{});return nodes;
 }
 const rawTag = (node: XmlNode) => Object.keys(node).find(key => key !== ':@') ?? '';
@@ -22,8 +23,29 @@ function attr(node: XmlNode, key: string, namespacedOnly = false): string | unde
   if (matching.length > 1) throw new Error('Ambiguous XML attribute namespace.');
   return matching[0]?.[1];
 }
+const markupCompatibilityNamespace='http://schemas.openxmlformats.org/markup-compatibility/2006';
+const supportedChoiceNamespaces=new Set([
+  'http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main',
+  'http://schemas.openxmlformats.org/drawingml/2006/main', 'http://purl.oclc.org/ooxml/drawingml/main',
+  'http://schemas.openxmlformats.org/presentationml/2006/main', 'http://purl.oclc.org/ooxml/presentationml/main',
+  'http://schemas.microsoft.com/office/word/2010/wordprocessingShape',
+]);
+function contentChildren(node: XmlNode): XmlNode[] {
+  if (namespaces.get(node) !== markupCompatibilityNamespace || tag(node) !== 'AlternateContent') return children(node);
+  const branches=children(node);
+  for(const choice of branches.filter(branch=>namespaces.get(branch)===markupCompatibilityNamespace&&tag(branch)==='Choice')){
+    const requiredPrefixes=attr(choice,'Requires');
+    if(requiredPrefixes===undefined||requiredPrefixes.trim()==='')throw new Error('AlternateContent Choice Requires is missing or empty.');
+    const scope=namespaceScopes.get(choice)??{};
+    const requires=requiredPrefixes.trim().split(/\s+/);
+    if(requires.every(prefix=>supportedChoiceNamespaces.has(scope[prefix]??'')))return children(choice);
+  }
+  const fallback=branches.find(branch=>namespaces.get(branch)===markupCompatibilityNamespace&&tag(branch)==='Fallback');
+  if(fallback)return children(fallback);
+  throw new Error('AlternateContent has no supported Choice or declared Fallback.');
+}
 function all(nodes: readonly XmlNode[], name: string): XmlNode[] {
-  return nodes.flatMap(node => [...(tag(node) === name ? [node] : []), ...all(children(node), name)]);
+  return nodes.flatMap(node => [...(tag(node) === name ? [node] : []), ...all(contentChildren(node), name)]);
 }
 function child(node: XmlNode, name: string): XmlNode | undefined { return children(node).find(item => tag(item) === name); }
 function required(parts: ReadonlyMap<string, string>, path: string): XmlNode[] {
@@ -40,7 +62,7 @@ function plain(nodes: readonly XmlNode[]): string {
     if (tag(node) === '#text') return '';
     if (tag(node) === 'tab') return '\t';
     if (tag(node) === 'br') return '\n';
-    return plain(children(node));
+    return plain(contentChildren(node));
   }).join('');
 }
 function paragraphText(node: XmlNode): string {
@@ -122,14 +144,14 @@ export function parseDocxParts(parts: ReadonlyMap<string, string>): ParsedDocume
             else if (name === '#text') continue;
             else if (name === 'tab') buffer += '\t';
             else if (name === 'br') buffer += '\n';
-            else run(children(item));
+            else run(contentChildren(item));
           }
         }
         run(children(node)); acc.add(buffer, level);
-      } else walk(children(node));
+      } else walk(contentChildren(node));
     }
   }
-  walk(children(body));
+  walk(contentChildren(body));
   for (const [path, xml] of parts) {
     if (/^word\/(?:header\d+|footer\d+|footnotes|endnotes)\.xml$/.test(path)) walk(parse(xml));
   }
@@ -181,7 +203,7 @@ export function parsePptxParts(parts: ReadonlyMap<string, string>): ParsedDocume
           const paragraphs = all(children(node), 'p');
           if (title) acc.add(paragraphs.map(paragraphText).join('\n'), 1);
           else for (const paragraph of paragraphs) acc.add(paragraphText(paragraph));
-        } else walk(children(node));
+        } else walk(contentChildren(node));
       }
     }
     walk(slide);

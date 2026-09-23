@@ -133,3 +133,13 @@ test('redirect responses are retained and rejected without following or retrying
  await assert.rejects(executeVendor(request,policy,h.deps,decode),{code:'E_VENDOR_REDIRECT',kind:'document'});
  assert.equal(h.sent.length,1);assert.equal(h.sent[0].redirect,'manual');assert.equal(h.sent[0].body,request.body);assert.equal(h.raw[0].raw,'redirect-body');assert.equal(h.raw[0].networkFailure,false);assert.deepEqual(h.sleeps,[]);
 });
+
+test('shared admission happens before secret or attempt allocation and rechecks guard after waking',async()=>{
+ const h=harness([ok()]);let resume!:()=>void,waiting=false,ids=0,stopped=false;h.deps.attemptId=()=>{ids++;return 'sent-1';};h.deps.awaitAdmission=async()=>{waiting=true;await new Promise<void>(resolve=>{resume=resolve;});};h.deps.guard=async()=>{if(stopped)throw new Error('budget or kill stop');};
+ const pending=executeVendor(request,policy,h.deps,decode);await Promise.resolve();await Promise.resolve();assert.equal(waiting,true);assert.equal(ids,0);assert.equal(h.events.includes('secret'),false);assert.equal(h.sent.length,0);stopped=true;resume();await assert.rejects(pending,/budget or kill/);assert.equal(ids,0);assert.equal(h.logs.length,0);
+});
+test('only explicit temporary429 hints are shared after raw persistence and call logging',async()=>{
+ const h=harness([new Response('{}',{status:429,headers:{'retry-after':'2'}}),ok()]);h.deps.observeRetryAfter=async attempt=>{h.events.push('observed');assert.equal(attempt.status,429);assert.equal(attempt.retryAfter,'2');assert.equal(h.raw.length,1);assert.equal(h.logs.length,1);};await executeVendor(request,policy,h.deps,decode);assert.ok(h.events.indexOf('observed')>h.events.indexOf('log'));assert.deepEqual(h.sent.map(s=>s.body),[request.body,request.body]);assert.equal(h.logs.length,2);
+ const noHint=harness([new Response('{}',{status:429}),ok()]);noHint.deps.observeRetryAfter=async()=>{throw Error('No explicit hint');};await executeVendor(request,policy,noHint.deps,decode);
+ const permanent=harness([new Response(JSON.stringify({error:{code:'insufficient_quota'}}),{status:429,headers:{'retry-after':'2'}})]);permanent.deps.observeRetryAfter=async()=>{throw Error('Must not share permanent quota');};await assert.rejects(executeVendor(request,policy,permanent.deps,decode),{code:'E_OPENAI_QUOTA'});
+});

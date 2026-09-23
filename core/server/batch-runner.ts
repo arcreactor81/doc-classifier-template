@@ -1,3 +1,4 @@
+import {retryAfterDeadline} from './provider-cooldown.ts';
 import { BatchReadRateLimitFailure, uploadBatchInput,createBatch,pollBatch,ingestBatchResults,type BatchDependencies,type BatchSnapshot,type BatchInputEntry } from '../vendors/batch.ts';
 import { decodeReader,verifyModelPolicy,type FrozenVendorRequest,type BatchResult } from '../vendors/requests.ts';
 import type { ProjectPack } from '../config/project.ts';
@@ -12,7 +13,9 @@ const io={maxMetadataBytes:1024*1024,maxResultLineBytes:8*1024*1024,streamChunkB
 const BATCH_READ_RETRY_ATTEMPTS=3;
 type BatchPollOutcome={kind:'response';snapshot:BatchSnapshot}|{kind:'rate_limited';retryAfter:string|null;rawReference:string};
 export function batchReadRetryDelay(retryAfter:string|null,nowMs=Date.now()):number{
- let delay=30000;if(retryAfter){const value=/^\d+(?:\.\d+)?$/.test(retryAfter)?Number(retryAfter)*1000:Date.parse(retryAfter)-nowMs;if(!Number.isFinite(value))throw new ServerFailure('E_RETRY_AFTER','blocker','The Batch retry-after header is invalid.');delay=Math.max(delay,value);}return delay;
+ if(retryAfter===null)return 30000;
+ try{return Math.max(30000,retryAfterDeadline(retryAfter,nowMs)-nowMs);}
+ catch{throw new ServerFailure('E_RETRY_AFTER','blocker','The Batch retry-after header is invalid or unsupported.');}
 }
 /** Each temporary 429 outcome is persisted by accountingStage before this outer durable sleep. */
 export async function pollWithReadRetries(runner:Pick<Runner,'accountingStage'|'step'|'store'>,stagePrefix:string,batchId:string,read:()=>Promise<BatchSnapshot>):Promise<BatchSnapshot>{

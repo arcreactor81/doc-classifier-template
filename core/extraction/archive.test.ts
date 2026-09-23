@@ -27,3 +27,17 @@ test('unsupported files fail explicitly before parser execution', async () => {
     pdfPolicy: { largeFontRatio: 1.2, maximumHeadingCharacters: 120, topPageFraction: 0.2, gapRatio: 1.5, minimumHeadings: 2 },
   }), { code: 'E_UNSUPPORTED_FORMAT' });
 });
+
+test('blank DOCX and image-only PPTX fail even though parser adds page or slide markers', async () => {
+ const options={pdfWorkerUrl:'/pdf.worker.mjs',parserVersions:{pdf:'1',zip:'1',xml:'1'},pdfPolicy:{largeFontRatio:1.2,maximumHeadingCharacters:120,topPageFraction:0.2,gapRatio:1.5,minimumHeadings:2}};
+ const docx=new ZipWriter(new BlobWriter('application/zip'));
+ await docx.add('word/document.xml',new TextReader('<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:br w:type="page"/></w:r></w:p></w:body></w:document>'));
+ await docx.add('docProps/core.xml',new TextReader('<cp:coreProperties xmlns:cp="urn:cp" xmlns:dc="urn:dc"><dc:title>Metadata only</dc:title></cp:coreProperties>'));
+ await assert.rejects(extractDocument(new File([await docx.close()],'blank.docx'),options),{code:'E_NO_TEXT'});
+ const pptx=new ZipWriter(new BlobWriter('application/zip'));
+ await pptx.add('ppt/presentation.xml',new TextReader('<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>'));
+ await pptx.add('ppt/_rels/presentation.xml.rels',new TextReader('<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/></Relationships>'));
+ await pptx.add('ppt/slides/slide1.xml',new TextReader('<p:sld xmlns:p="urn:p"><p:cSld><p:spTree><p:pic/></p:spTree></p:cSld></p:sld>'));
+ await pptx.add('ppt/media/image1.png',new TextReader(generated));
+ await assert.rejects(extractDocument(new File([await pptx.close()],'imageonly.pptx'),options),{code:'E_NO_TEXT'});
+});

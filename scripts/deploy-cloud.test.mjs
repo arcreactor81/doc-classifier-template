@@ -17,3 +17,5 @@ test('cloud deployment gates checks then migrates binding before publishing',()=
  assert.deepEqual(steps[1].slice(1,5),['d1','migrations','apply','DB']);assert.ok(steps[1].includes('--remote'));assert.equal(steps[2][1],'deploy');
  assert.ok(steps[2].includes('BUILD_COMMIT:'+'a'.repeat(40)));
 });
+
+test('derived config is used for migrations and deployment without changing command ordering',()=>{const steps=cloudDeployCommands('a'.repeat(40),'/workspace/.wrangler-install-test.jsonc');assert.equal(steps[0][0],'scripts/check.mjs');for(const step of steps.slice(1))assert.equal(step[step.indexOf('--config')+1],'/workspace/.wrangler-install-test.jsonc');assert.equal(steps[1][1],'d1');assert.equal(steps[2][1],'deploy');});

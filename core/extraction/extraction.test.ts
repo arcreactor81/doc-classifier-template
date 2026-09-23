@@ -92,3 +92,34 @@ test('Office visible text carriers support namespace aliases without admitting u
  const xml='<w:document xmlns:w="urn:w" xmlns:alias="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="urn:metadata"><w:body><w:p><w:r><alias:t>Visible alias</alias:t><m:t>Not a text carrier</m:t><m:value>Metadata only</m:value></w:r></w:p></w:body></w:document>';
  assert.equal(parseDocxParts(new Map([['word/document.xml',xml]])).fullText,'[Page 1]\nVisible alias');
 });
+
+
+test('AlternateContent selects the first supported Choice and preserves namespace-alias text once',()=>{
+ const xml='<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><w:body><w:p><w:r><mc:AlternateContent><mc:Choice Requires="wpg"><x:t>unsupported choice</x:t></mc:Choice><mc:Choice Requires="wps"><x:t>selected choice</x:t></mc:Choice><mc:Fallback><x:t>fallback copy</x:t></mc:Fallback></mc:AlternateContent></w:r></w:p></w:body></w:document>';
+ assert.equal(parseDocxParts(new Map([['word/document.xml',xml]])).fullText,'[Page 1]\nselected choice');
+});
+test('AlternateContent uses declared Fallback for unknown Requires and never merges branches',()=>{
+ const xml='<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:future="urn:future"><w:body><w:p><w:r><mc:AlternateContent><mc:Choice Requires="future"><w:t>future copy</w:t></mc:Choice><mc:Fallback><w:t>fallback copy</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p></w:body></w:document>';
+ assert.equal(parseDocxParts(new Map([['word/document.xml',xml]])).fullText,'[Page 1]\nfallback copy');
+});
+test('AlternateContent without a supported Choice or Fallback fails explicitly',()=>{
+ const xml='<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:future="urn:future"><w:body><w:p><w:r><mc:AlternateContent><mc:Choice Requires="future"><w:t>invisible</w:t></mc:Choice></mc:AlternateContent></w:r></w:p></w:body></w:document>';
+ assert.throws(()=>parseDocxParts(new Map([['word/document.xml',xml]])),/AlternateContent/i);
+});
+test('AlternateContent branch selection controls nested table text and headers',()=>{
+ const xml='<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:r><w:t>Selected header</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>Selected body</w:t></w:r></w:p></w:tc></w:tr></w:tbl></mc:Choice><mc:Fallback><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Fallback header</w:t></w:r></w:p></w:tc></w:tr></w:tbl></mc:Fallback></mc:AlternateContent></w:body></w:document>';
+ const result=parseDocxParts(new Map([['word/document.xml',xml]]));assert.equal(result.fullText,'[Page 1]\nSelected header\nSelected body');assert.deepEqual(result.outline.tables[0].headers,['Selected header']);
+});
+
+
+test('AlternateContent resolves Choice-local namespace bindings for Requires',()=>{
+ const xml='<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:feature="urn:unsupported"><w:body><w:p><w:r><mc:AlternateContent><mc:Choice xmlns:feature="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" Requires="feature"><w:t>choice local binding</w:t></mc:Choice><mc:Fallback><w:t>fallback copy</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p></w:body></w:document>';
+ assert.equal(parseDocxParts(new Map([['word/document.xml',xml]])).fullText,'[Page 1]\nchoice local binding');
+});
+test('AlternateContent rejects missing or empty mandatory Choice Requires',()=>{
+ for(const requires of ['', undefined]){
+  const attribute=requires===undefined?'':' Requires=""';
+  const xml='<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><mc:AlternateContent><mc:Choice'+attribute+'><w:t>ambiguous choice</w:t></mc:Choice><mc:Fallback><w:t>fallback copy</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p></w:body></w:document>';
+  assert.throws(()=>parseDocxParts(new Map([['word/document.xml',xml]])),/Requires/i);
+ }
+});

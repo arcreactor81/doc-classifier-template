@@ -33,7 +33,7 @@
   "workflows": [
     {
       "binding": "DOCUMENT_WORKFLOW",
-      "name": "doc-classifier-generic-document",
+      "name": "doc-classifier-new-install-workflow-v1",
       "class_name": "DocumentWorkflow"
     }
   ],

@@ -24,6 +24,10 @@ export interface CallLog extends Omit<RawAttempt, 'raw' | 'retryAfter'> {
   usage: Record<string, unknown> | null;
 }
 export interface TransportDependencies {
+  /** Optional shared backpressure; must not allocate an inference attempt while waiting. */
+  awaitAdmission?(role:VendorRole,model:string):Promise<void>;
+  /** Called only for explicit temporary429 hints after immutable raw and call logging. */
+  observeRetryAfter?(attempt:RawAttempt):Promise<void>;
   fetch(url: string, init: RequestInit): Promise<Response>;
   readSecret(role: VendorRole): Promise<string | null>;
   /** Must enforce live-call gate, kill switch and spending limit from persistent state. */
@@ -85,6 +89,7 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
   for (let schemaAttempt = 1; schemaAttempt <= policy.schemaAttempts; schemaAttempt++) {
     for (let transportAttempt = 1; transportAttempt <= policy.transportAttempts; transportAttempt++) {
       await deps.guard(role);
+      if(deps.awaitAdmission){await deps.awaitAdmission(role,model);await deps.guard(role);}
       let secret: string | null;
       try { secret = await deps.readSecret(role); }
       catch { throw new ValidationFailure('E_VENDOR_KEY', 'blocker', 'Vendor credentials could not be read.'); }
@@ -126,6 +131,7 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
       const permanentOpenAiQuota = role !== 'confidence' && status === 429 && typeof error?.code === 'string' && permanentOpenAiQuotaCodes.has(error.code);
       // No further inference is possible after this blocker, so preserve the provider diagnosis before the guard that stops new work on unknown usage.
       if (permanentOpenAiQuota) throw new ValidationFailure('E_OPENAI_QUOTA', 'blocker', 'OpenAI quota or billing access requires action before another request.');
+      if(status===429&&retryAfter!==null&&deps.observeRetryAfter)await deps.observeRetryAfter(attempt);
       await deps.guard(role);
       if (networkFailure || status === 408 || status === 409 || status === 429 || status !== null && status >= 500) {
         if (transportAttempt === policy.transportAttempts) return exhausted(role, deps, policy, new ValidationFailure('E_VENDOR_UNAVAILABLE', 'document', 'Vendor unavailable after all permitted attempts.'));

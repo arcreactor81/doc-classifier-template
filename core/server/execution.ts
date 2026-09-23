@@ -1,3 +1,4 @@
+import {providerScope,readProviderCooldown,observeProviderCooldown,awaitProviderAdmission} from './provider-cooldown.ts';
 import type { WorkflowStep } from 'cloudflare:workers';
 import type { ProjectPack } from '../config/project.ts';
 import { actualUsageCost } from '../cost/cost.ts';
@@ -15,7 +16,7 @@ export async function guard(env:Env,store:Store,runId:string):Promise<void>{
  const run=await store.run(runId);
  if(run.status!=='running')throw new ServerFailure('E_RUN_STOPPED','blocker','This run is not running.');
  if(String(env.MODEL_CALLS_ENABLED)!=='true')throw new ServerFailure('E_MODEL_CALLS_DISABLED','blocker','Model calls are disabled.');
- const unaccounted=await env.DB.prepare("SELECT COUNT(*) AS count FROM vendor_calls WHERE run_id=? AND role!='batch_metadata' AND (status BETWEEN 200 AND 299 OR usage_json IS NOT NULL) AND cost_nano IS NULL").bind(runId).first<{count:number}>();
+ const unaccounted=await env.DB.prepare("SELECT COUNT(*) AS count FROM vendor_calls WHERE run_id=? AND role!='batch_metadata' AND cost_nano IS NULL").bind(runId).first<{count:number}>();
  if(unaccounted?.count)throw new ServerFailure('E_SPEND_UNACCOUNTED','blocker','A vendor response has unaccounted spending. The run has halted for review.');
  const budget=checkRunBudget(readRunBudget(JSON.parse(run.budget_json)),await store.spendByVendor(runId));
  if(budget.halt)throw new ServerFailure('E_LIVE_BUDGET','blocker',`Recorded spending reached the run limit: ${budget.reached.join(', ')}. Already submitted calls may still add charges.`);
@@ -47,10 +48,25 @@ export class Runner {
    await this.store.event(this.run.id,this.fingerprint,name,'completed',{key},Date.now()-started);return key;
   });
  }
+ async admission(role:VendorRole,nextAttempt:number):Promise<void>{
+  // Existing checkpoints represent dispatched/completed/uncertain work and are never sent again.
+  const prior=await this.env.DB.prepare('SELECT status FROM checkpoints WHERE run_id=? AND fingerprint=? AND name=?').bind(this.run.id,this.fingerprint,role+'-http-'+nextAttempt).first();
+  if(prior)return;
+  const scope=providerScope(role);
+  await awaitProviderAdmission({now:Date.now,guard:()=>guard(this.env,this.store,this.run.id),readDeadline:()=>readProviderCooldown(this.env.DB,scope),waitUntil:async until=>{
+   const name=role+'-admission-'+nextAttempt+'-'+until;
+   await this.stage(name,async()=>{await this.store.event(this.run.id,this.fingerprint,'provider_cooldown','waiting',{scope,until});return{scope,until};});
+   // Absolute timestamp and stable name prevent replay from adding another relative delay.
+   // This is a top-level Workflow operation, outside both the plan and HTTP step.do callbacks.
+   await this.step.sleepUntil(name+'-wait',until);
+  }});
+ }
  async vendor<T>(request:FrozenVendorRequest,pack:ProjectPack,decode:(raw:unknown)=>T):Promise<string>{
   let index=0,activeId='',sleepIndex=0,fetchFatal:unknown;
   const role=request.role;
   const deps:TransportDependencies={
+   awaitAdmission:()=>this.admission(role,index+1),
+   observeRetryAfter:attempt=>observeProviderCooldown(this.env.DB,role,attempt.attemptId,attempt.retryAfter!),
    guard:()=>guard(this.env,this.store,this.run.id),
    readSecret:async requested=>requested==='confidence'?this.env.JEV_API_KEY.get():this.env.OPENAI_API_KEY.get(),
    now:Date.now,

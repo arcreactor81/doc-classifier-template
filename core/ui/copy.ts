@@ -1,4 +1,5 @@
 ﻿export const uiCopy = {
+  providerWaitOpenai:'OpenAI requested a pause. This run is waiting before sending another request.', providerWaitTypesafe:'TypeSafe requested a pause. This run is waiting before sending another request.',
   documentFilename:'Document', resultExplanation:'Outcome details',
   workspaceLabel:'DOCUMENT WORKSPACE', navigationLabel:'Workspace navigation', privacyFootnote:'Your originals stay on your machine.', workspaceEyebrow:'A clear path from documents to decisions', sourceEmptyTitle:'Start with your documents', sourceEmptyBody:'Choose a folder to extract its text and structure locally. You review the run before anything is uploaded.', setupStatus:'Setup needs attention', operationalStatus:'Ready for a new run', systemStatus:'System status',
   flowSteps:[{title:'Extract locally',detail:'Keep the originals on your machine.'},{title:'Review both opinions',detail:'See the evidence behind each outcome.'},{title:'Build and refine',detail:'Create folders and bring back corrections.'}],

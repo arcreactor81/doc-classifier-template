@@ -1,3 +1,4 @@
+import {DatabaseSync,type SQLInputValue} from 'node:sqlite';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { guard,accountingGuard } from './execution.ts';
@@ -45,4 +46,23 @@ test('closure keeps uploaded R2 text when required Batch accounting cannot be pr
  const store=new Store(env);store.run=async()=>({id:'run',status:'halted',pack_json:'{}'} as Awaited<ReturnType<Store['run']>>);store.event=async()=>{};
  await assert.rejects(()=>store.close('run','person'));
  assert.equal(deletes,0);assert.ok(!writes.some(sql=>sql.includes("status='closed'")));
+});
+
+
+test('real SQL guard stops unknown spend from failed or unanswered inference, not unrelated metadata',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  db.exec('CREATE TABLE controls(id INTEGER,kill INTEGER); INSERT INTO controls VALUES(1,0); CREATE TABLE vendor_calls(run_id TEXT,role TEXT,status INTEGER,usage_json TEXT,cost_nano TEXT)');
+  const f=fixture({blended:'0',openai:'0',typesafe:'0'});
+  f.env.DB={prepare:(sql:string)=>{let params:SQLInputValue[]=[];return{bind(...values:SQLInputValue[]){params=values;return this;},first:async()=>db.prepare(sql).get(...params)??null};}} as unknown as D1Database;
+  for(const status of [null,500,429,200]){
+   db.exec('DELETE FROM vendor_calls');db.prepare('INSERT INTO vendor_calls VALUES(?,?,?,?,?)').run('run','reader',status,null,null);
+   await assert.rejects(()=>guard(f.env,f.store,'run'),{code:'E_SPEND_UNACCOUNTED'});
+  }
+  db.exec('DELETE FROM vendor_calls');
+  db.prepare('INSERT INTO vendor_calls VALUES(?,?,?,?,?)').run('run','batch_metadata',429,null,null);
+  db.prepare('INSERT INTO vendor_calls VALUES(?,?,?,?,?)').run('another-run','reader',null,null,null);
+  db.prepare('INSERT INTO vendor_calls VALUES(?,?,?,?,?)').run('run','reader',200,'{}','0');
+  await guard(f.env,f.store,'run');
+ }finally{db.close();}
 });

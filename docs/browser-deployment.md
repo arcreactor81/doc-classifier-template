@@ -47,6 +47,9 @@ At each run, choose USD limits for both vendors combined, OpenAI, TypeSafe, or a
 
 ## Fresh-owner acceptance still to perform
 
-Use a new repository and independent resources. Confirm the setup creates D1, R2 and both Secrets Store bindings, records the provisioned names/IDs in the clone, and completes migrations before deployment. Confirm the Workflow appears with the deployed class. The build gate deliberately rejects uncommitted application changes; resource identity rewrites alone are allowed. If deploying another copy into an account that already has this template, use distinct resource and Workflow names in Git.
+Use a new repository and independent resources. Confirm the setup creates D1, R2 and both Secrets Store bindings, records the provisioned names/IDs in the clone, and completes migrations before deployment. Confirm the Workflow appears with the deployed class. The build gate deliberately rejects uncommitted application changes; resource identity rewrites alone are allowed. New copies derive an installation-specific Workflow name from the configured Worker name and binding. Existing custom names are preserved. Keep installation configuration when updating application code; do not replace an existing Workflow name with the new-install marker.
 
 After Access setup and the authentication-settings commit, check both sign-in denial for unauthorized people and a successful signed-in Runs request. A login page or visible static website alone does not verify the app's JWT audience/team settings. Then define the project types in projects/generic/project.json through the web editor, finish Health setup, and explicitly activate. These browser checks remain unverified on a fresh account; passing repository tests does not replace them.
+
+
+The deployment API token must have the permissions needed for Workers and its storage bindings/migrations, including Account Secrets Store Edit. Both bound secrets must include the workers scope. A successful GitHub test run alone does not establish that Cloudflare deployment succeeded; verify the Workers Builds deployment log and the deployed Health page.

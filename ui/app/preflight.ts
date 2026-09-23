@@ -29,7 +29,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
   const session = () => localStorage.getItem('local-extraction-run');
   function action(label: string, work: () => Promise<void>): HTMLButtonElement {
     const button = element('button', label); button.type = 'button';
-    button.onclick = () => { busy = true; update(); void work().catch(options.onError).finally(() => { busy = false; update(); }); };
+    button.onclick = () => { busy = true; notice.textContent=c.loading; update(); void work().catch(options.onError).finally(() => { busy = false; update(); }); };
     return button;
   }
   async function prepared(localId: string) {
@@ -43,7 +43,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
     if (run.status === 'uploading') {
       const {items} = await prepared(localId), store = await LocalRunStore.open();
       try {
-        let completed = 0;
+        let completed = 0;notice.textContent=c.uploads+': 0 / '+items.length;
         for (const item of items) {
           if (item.local.state !== 'uploaded') {
             await options.request('/api/runs/' + encodeURIComponent(runId) + '/documents', item.upload);
@@ -98,7 +98,8 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
     estimate.disabled = busy || !options.ready || alreadyConfirmed; confirm.disabled = busy || !options.ready || alreadyConfirmed || !quote || !validBudget;
     budgetBox.disabled=busy;warning.hidden=budgetMode.value!=='unlimited';limitFields.hidden=budgetMode.value==='unlimited';mode.disabled=busy;
     resume.hidden = !session() || !localStorage.getItem('server-run:' + session()); resume.disabled = busy || !options.ready;
-    notice.hidden = !!quote;
+    notice.hidden = !!quote && !busy;
+    if(!busy&&!quote)notice.textContent=c.uploadUnavailable;
   }
   function invalidate(): void { quote = null; quotedLocalId = ''; quotedDocuments = ''; quotedPack = ''; quotedType = ''; acknowledge.checked = false; output.replaceChildren(); update(); }
   mode.addEventListener('change',()=>{userMode=mode.value as RunMode;invalidate();});budgetMode.addEventListener('change',()=>{acknowledge.checked=false;update();});acknowledge.addEventListener('change',update);for(const input of Object.values(inputs))input.addEventListener('input',update);
