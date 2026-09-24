@@ -47,7 +47,7 @@ For a document, **Your decision** can be:
 - **Either category is acceptable**: choose **First acceptable category** and **Other acceptable category**. This records ambiguity without forcing a folder move. These documents are counted separately and excluded from misfile denominators.
 - **Exclude from comparison**: keep the document out of the scored reference set.
 
-Map any newly created folder to the intended activated category. Processing failures and unconfirmed cases remain visible as separate counts. Then choose **Confirm labels for comparison** and **Start a run**. Reselect the local source documents when the browser asks; comparison never requires a cloud collection of originals.
+Map any newly created folder to the intended activated category. Processing failures and unconfirmed cases remain visible as separate counts. Then choose **Confirm labels for comparison** and **Choose files for the comparison run**. Home shows that the saved corrections will be used. Select the original source folder, then review and confirm spending before classification starts. If previous output copies are nested inside the source, choose **Exclude output copies and use the originals**; no files are moved or deleted. Comparison never requires a cloud collection of originals.
 
 ## Read the next run's comparison
 

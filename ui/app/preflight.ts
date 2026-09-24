@@ -1,3 +1,4 @@
+import {currentLocalExtraction,referenceForExtraction} from '../../core/local/session.ts';
 import { suggestRunMode,type RunMode,type ModeSettings } from '../../core/ui/run-mode.ts';
 ﻿import { activeUiCopy as c } from '../../core/ui/project-copy.ts';
 import { prepareLocalRun } from '../../core/local/preflight.ts';
@@ -26,7 +27,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
   const acknowledge=element('input');acknowledge.type='checkbox';const acknowledgeLabel=element('label');acknowledgeLabel.append(acknowledge,document.createTextNode(c.unlimitedAcknowledgement));warning.append(element('p',c.overrideWarning),acknowledgeLabel);
   const budgetError=element('p');budgetError.className='muted';budgetError.setAttribute('aria-live','polite');budgetBox.append(limitFields,warning,budgetError,element('p',c.spendingLag));
   function readBudget(){return budgetFromInputs(budgetMode.value as 'limited'|'unlimited',{blended:inputs.blended.value,openai:inputs.openai.value,typesafe:inputs.typesafe.value},acknowledge.checked);}
-  const session = () => localStorage.getItem('local-extraction-run');
+  const session = () => currentLocalExtraction(localStorage,sessionStorage);
   function action(label: string, work: () => Promise<void>): HTMLButtonElement {
     const button = element('button', label); button.type = 'button';
     button.onclick = () => { feedback.replaceChildren(); busy = true; notice.textContent=c.loading; update(); void work().catch(error=>options.onError(error,feedback)).finally(() => { busy = false; update(); }); };
@@ -96,7 +97,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
     if(JSON.stringify(pack)!==quotedPack){acknowledge.checked=false;await refreshLocalEstimate(quotedLocalId);throw new Error(c.estimateChanged);}
     const budget=readBudget();
     // This explicit confirmation is the first point at which any extracted-document metadata is sent.
-    const server=await options.request<Quote>('/api/quote',{documents,mode:quote.mode,...(localStorage.getItem('workspace-reference')?{referenceId:localStorage.getItem('workspace-reference')}: {})});
+    const server=await options.request<Quote>('/api/quote',{documents,mode:quote.mode,...(referenceForExtraction(localStorage,quotedLocalId)?{referenceId:referenceForExtraction(localStorage,quotedLocalId)}: {})});
     if(server.typeVersion!==quotedType||server.mode!==quote.mode){
       acknowledge.checked=false;await refreshLocalEstimate(quotedLocalId);output.append(element('p',c.estimateChanged));throw new Error(c.estimateChanged);
     }
