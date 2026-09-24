@@ -21,3 +21,9 @@ test('active runs expose no stop and legacy stopped runs keep explicit recorded 
  const f=fixture(null);assert.equal(await readRunStopReason(f.store,{id:'run',status:'running'} as RunRow),null);
  const issue=await readRunStopReason(f.store,{id:'run',status:'halted',halt_json:JSON.stringify({code:'E_KILL_SWITCH',actor:'person'})} as RunRow);assert.equal(issue?.code,'E_KILL_SWITCH');
 });
+
+test('historical storage wrapper error shows retained unknown response without rewriting recorded cause',async()=>{
+ const run={id:'run',status:'halted',halt_json:JSON.stringify({code:'E_RAW_PERSIST',message:'Raw vendor response could not be stored.'})} as RunRow;
+ const before=JSON.stringify(run);const f=fixture(null,{role:'confidence',status:520,raw_key:'run/doc/raw/a.json',fingerprint:'doc',attempt_id:'a',original_filename:'document.pdf'},{status:520,raw:'error code: 520\n',privateHeader:'not displayed'});
+ const result=await readRunStopReason(f.store,run);assert.equal(result?.code,'E_RAW_PERSIST');assert.equal(result?.details.rawResponseRetained,true);assert.equal(result?.details.httpStatus,520);assert.equal(result?.details.costKnown,false);assert.equal(JSON.stringify(run),before);assert.ok(!JSON.stringify(result).includes('privateHeader'));
+});

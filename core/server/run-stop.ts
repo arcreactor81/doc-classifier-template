@@ -13,9 +13,14 @@ export async function readRunStopReason(store:Store,run:RunRow){
  const error=failureResponse(new ServerFailure(code,'blocker',message)).error;
  const details:Record<string,unknown>={...error.details,...(first?{firstObservedAt:first.created_at}: {})};
  let headline=error.headline;
- if(code==='E_SPEND_UNACCOUNTED'){
+ if(code==='E_SPEND_UNACCOUNTED'||code==='E_RAW_PERSIST'){
   const call=await store.env.DB.prepare("SELECT v.role,v.status,v.raw_key,v.fingerprint,v.attempt_id,d.original_filename FROM vendor_calls v LEFT JOIN documents d ON d.run_id=v.run_id AND d.fingerprint=v.fingerprint WHERE v.run_id=? AND v.role!='batch_metadata' AND v.cost_nano IS NULL ORDER BY v.created_at,v.attempt_id LIMIT 1").bind(run.id).first<UnknownCall>();
   if(call){Object.assign(details,{role:call.role,httpStatus:call.status,attemptId:call.attempt_id,document:call.original_filename,costKnown:false});
+   if(code==='E_RAW_PERSIST'){
+    if(!call.raw_key.startsWith(run.id+'/'+call.fingerprint+'/raw/'))throw new ServerFailure('E_ARTIFACT_SCOPE','blocker','The recorded response does not belong to this document.');
+    const envelope=await store.json<{status:number|null;raw:string|null}>(call.raw_key);
+    if(envelope.status===call.status&&typeof envelope.raw==='string'){details.rawResponseRetained=true;details.diagnosticNote=serverCopy.retainedResponseDiagnostic;headline=serverCopy.retainedResponseHeadline;}
+   }
    if(call.role==='confidence'&&call.status===400){
     if(!call.raw_key.startsWith(run.id+'/'+call.fingerprint+'/raw/'))throw new ServerFailure('E_ARTIFACT_SCOPE','blocker','The recorded response does not belong to this document.');
     const envelope=await store.json<{raw:string|null}>(call.raw_key);let body:unknown=null;

@@ -1,9 +1,11 @@
+import {checkSpendAdmission,unknownSpendPolicy} from '../cost/spend-admission.ts';
+import {ValidationFailure} from '../vendors/validate.ts';
 import {readerEvidencePolicy} from '../vendors/evidence-policy.ts';
 import {providerScope,readProviderCooldown,observeProviderCooldown,awaitProviderAdmission} from './provider-cooldown.ts';
 import type { WorkflowStep } from 'cloudflare:workers';
 import type { ProjectPack } from '../config/project.ts';
 import { actualUsageCost } from '../cost/cost.ts';
-import { checkRunBudget,readRunBudget } from '../cost/run-budget.ts';
+import { readRunBudget } from '../cost/run-budget.ts';
 import { executeVendor, type CallLog, type RawAttempt, type TransportDependencies } from '../vendors/transport.ts';
 import { verifyModelPolicy,type FrozenVendorRequest,type VendorRole } from '../vendors/requests.ts';
 import { Store,now,type RunRow } from './store.ts';
@@ -18,9 +20,10 @@ export async function guard(env:Env,store:Store,runId:string):Promise<void>{
  if(run.status!=='running')throw new ServerFailure('E_RUN_STOPPED','blocker','This run is not running.');
  if(String(env.MODEL_CALLS_ENABLED)!=='true')throw new ServerFailure('E_MODEL_CALLS_DISABLED','blocker','Model calls are disabled.');
  const unaccounted=await env.DB.prepare("SELECT COUNT(*) AS count FROM vendor_calls WHERE run_id=? AND role!='batch_metadata' AND cost_nano IS NULL").bind(runId).first<{count:number}>();
- if(unaccounted?.count)throw new ServerFailure('E_SPEND_UNACCOUNTED','blocker','A vendor response has unaccounted spending. The run has halted for review.');
- const budget=checkRunBudget(readRunBudget(JSON.parse(run.budget_json)),await store.spendByVendor(runId));
- if(budget.halt)throw new ServerFailure('E_LIVE_BUDGET','blocker',`Recorded spending reached the run limit: ${budget.reached.join(', ')}. Already submitted calls may still add charges.`);
+ const frozen=JSON.parse(run.pack_json??'{}');
+ const admission=checkSpendAdmission(frozen.settings?.unknownSpendPolicy,readRunBudget(JSON.parse(run.budget_json)),await store.spendByVendor(runId),unaccounted?.count??0);
+ if(admission.reason==='unknown_spend')throw new ServerFailure('E_SPEND_UNACCOUNTED','blocker','New requests are paused because a vendor charge is unknown and the recorded spending policy cannot verify further spending. Completed work is preserved.');
+ if(admission.reason==='limit_reached')throw new ServerFailure('E_LIVE_BUDGET','blocker',`Recorded spending reached the run limit: ${admission.reached.join(', ')}. Already submitted calls may still add charges.`);
 }
 /** Only retrieve/account work already submitted by this run; never authorize new inference. */
 export async function accountingGuard(env:Env,store:Store,runId:string,batchId:string):Promise<void>{
@@ -65,6 +68,7 @@ export class Runner {
  async vendor<T>(request:FrozenVendorRequest,pack:ProjectPack,decode:(raw:unknown)=>T):Promise<string>{
   let index=0,activeId='',sleepIndex=0,fetchFatal:unknown;
   const role=request.role;
+  const isolateUnknown=unknownSpendPolicy(pack.settings.unknownSpendPolicy)==='isolate-unlimited-v1'&&readRunBudget(JSON.parse(this.run.budget_json)).mode==='unlimited';
   const deps:TransportDependencies={
    awaitAdmission:()=>this.admission(role,index+1),
    observeRetryAfter:attempt=>observeProviderCooldown(this.env.DB,role,attempt.attemptId,attempt.retryAfter!),
@@ -113,7 +117,8 @@ export class Runner {
      return new Response(envelope.raw,{status:envelope.status!,headers:envelope.headers});
     }catch(error){if(!knownNetworkFailure)fetchFatal=error;throw error;}
    },
-   persistRaw:async(_attempt:RawAttempt)=>{if(fetchFatal)throw fetchFatal;},
+   persistRaw:async(_attempt:RawAttempt)=>{if(fetchFatal instanceof ServerFailure)throw new ValidationFailure(fetchFatal.code,fetchFatal.kind==='document'?'document':'blocker',fetchFatal.message);if(fetchFatal)throw fetchFatal;},
+   ...(isolateUnknown?{unknownCost:async(attemptId:string)=>{const call=await this.env.DB.prepare('SELECT cost_nano FROM vendor_calls WHERE attempt_id=? AND run_id=?').bind(attemptId,this.run.id).first<{cost_nano:string|null}>();if(!call)throw new ServerFailure('E_VENDOR_LOG','blocker','The vendor call was not recorded.');return call.cost_nano===null;}}:{}),
    logCall:async(_call:CallLog)=>{
     const logged=await this.env.DB.prepare('SELECT attempt_id FROM vendor_calls WHERE attempt_id=?').bind(activeId).first();
     if(!logged)throw new ServerFailure('E_VENDOR_LOG','blocker','The vendor call was not recorded.');

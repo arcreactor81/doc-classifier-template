@@ -37,6 +37,8 @@ export interface TransportDependencies {
   /** Fresh immutable artifact identity, including across resumed invocations. */
   attemptId(): string;
   persistRaw(attempt: RawAttempt): Promise<void>;
+  /** Only enabled for explicit unlimited isolation; consult the persisted attempt ledger. */
+  unknownCost?(attemptId:string):Promise<boolean>;
   logCall(call: CallLog): Promise<void>;
   /** Persist ordered document outcomes per vendor, reset on non-exhausted outcomes. */
   recordDocumentOutcome(role: VendorRole, exhausted: boolean): Promise<number>;
@@ -116,7 +118,7 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
       if (!Number.isFinite(latencyMs) || latencyMs < 0) throw new ValidationFailure('E_CLOCK', 'blocker', 'Vendor timing source moved backwards.');
       const attempt: RawAttempt = { attemptId, role, modelRequested: model, status, requestId, raw, networkFailure, latencyMs, retryAfter };
       try { await deps.persistRaw(attempt); }
-      catch { throw new ValidationFailure('E_RAW_PERSIST', 'blocker', 'Raw vendor response could not be stored.'); }
+      catch (error) { if(error instanceof ValidationFailure)throw error;throw new ValidationFailure('E_RAW_PERSIST', 'blocker', 'Raw vendor response could not be stored.'); }
       let parsed: unknown = null, parseFailure = false;
       if (raw !== null) {
         try { parsed = JSON.parse(raw); }
@@ -134,6 +136,8 @@ export async function executeVendor<T>(request: FrozenVendorRequest, policy: Ret
       if (permanentOpenAiQuota) throw new ValidationFailure('E_OPENAI_QUOTA', 'blocker', 'OpenAI quota or billing access requires action before another request.');
       if(status===429&&retryAfter!==null&&deps.observeRetryAfter)await deps.observeRetryAfter(attempt);
       await deps.guard(role);
+      const globalRequestFailure=status===401||status===403||status===404||error?.code==='model_not_found'||error?.param==='model';
+      if(!globalRequestFailure&&deps.unknownCost&&await deps.unknownCost(attemptId))throw new ValidationFailure('E_VENDOR_COST_UNKNOWN','document','This document stopped because the vendor response has no verified cost. The charge remains unresolved and this attempt was not retried.');
       if (networkFailure || status === 408 || status === 409 || status === 429 || status !== null && status >= 500) {
         if (transportAttempt === policy.transportAttempts) return exhausted(role, deps, policy, new ValidationFailure('E_VENDOR_UNAVAILABLE', 'document', 'Vendor unavailable after all permitted attempts.'));
         await deps.sleep(retryDelay(retryAfter, transportAttempt, policy, deps.now()));

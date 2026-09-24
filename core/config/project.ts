@@ -6,6 +6,7 @@ export interface DocumentType { id:string; name:string; what:string; not_for:str
 export interface TypeFile { types:DocumentType[]; none_of_these:{name:string;what:string} }
 export interface ModelPin { id:string; date:string; reason:string; policy:'versioned'|'owner_approved_alias' }
 export interface ProjectSettings {
+ unknownSpendPolicy?:'halt-on-unknown-v1'|'isolate-unlimited-v1';
  readerEvidencePolicy?:'exact-substring-v1'|'whitespace-quotes-v1';
  decisionNotePolicy:DecisionNotePolicy; confidenceStatePolicy:ConfidenceStatePolicy; digestBudget?:number|null; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
  recoveryMinimumHeadings:number; minimumFiledCount:number; batchCutoff:number; defaultMode:'interactive'|'batch';
@@ -65,6 +66,7 @@ export function validateProject(value:unknown):ConfigIssue[]{
   }
  }
  const settings=value.settings;
+ if(record(settings)&&settings.unknownSpendPolicy!==undefined&&!['halt-on-unknown-v1','isolate-unlimited-v1'].includes(String(settings.unknownSpendPolicy)))issue('settings.unknownSpendPolicy','Unknown spending admission policy.');
  if(record(settings)&&settings.readerEvidencePolicy!==undefined&&!['exact-substring-v1','whitespace-quotes-v1'].includes(String(settings.readerEvidencePolicy)))issue('settings.readerEvidencePolicy','Unknown reader evidence policy.');
  if(!record(settings))issue('settings','Explicit settings are required.');
  else{

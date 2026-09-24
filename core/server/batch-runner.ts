@@ -1,3 +1,5 @@
+import {unknownSpendPolicy} from '../cost/spend-admission.ts';
+import {readRunBudget} from '../cost/run-budget.ts';
 import {readerEvidencePolicy} from '../vendors/evidence-policy.ts';
 import {retryAfterDeadline} from './provider-cooldown.ts';
 import { BatchReadRateLimitFailure, uploadBatchInput,createBatch,pollBatch,ingestBatchResults,type BatchDependencies,type BatchSnapshot,type BatchInputEntry } from '../vendors/batch.ts';
@@ -48,6 +50,23 @@ export async function batchReader(runner:Runner,pack:ProjectPack,request:FrozenV
   await runner.step.sleep(`batch-wait-delay-${tick}`,'30 seconds');
  }
 }
+/** Evaluate retained accounting only after the entire submitted result stream has been saved. */
+export async function retainedBatchCostFailure(runner:Pick<Runner,'env'|'run'>,pack:ProjectPack,attemptId:string,result:BatchResult):Promise<ServerFailure|null>{
+ if(unknownSpendPolicy(pack.settings.unknownSpendPolicy)!=='isolate-unlimited-v1')return null;
+ const body=result.response?.body;
+ const raw=body&&typeof body==='object'?body as Record<string,unknown>:null;
+ const error=raw?.error&&typeof raw.error==='object'?raw.error as Record<string,unknown>:null;
+ const status=result.response?.status_code;
+ if(raw&&Object.hasOwn(raw,'model'))verifyModelPolicy(pack.pins.reader,raw.model,'reader');
+ if(status===401||status===403)throw new ServerFailure('E_VENDOR_AUTH','blocker','Reader credentials were rejected within the Batch.');
+ if(status===404||error?.code==='model_not_found'||error?.param==='model')throw new ServerFailure('E_MODEL_REJECTED','blocker','Configured reader model was rejected within the Batch.');
+ if(status===429&&['insufficient_quota','credit_balance_exhausted','organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded'].includes(String(error?.code)))throw new ServerFailure('E_OPENAI_QUOTA','blocker','OpenAI quota or billing access requires action before another request.');
+ const row=await runner.env.DB.prepare('SELECT cost_nano FROM vendor_calls WHERE attempt_id=?').bind(attemptId).first<{cost_nano:string|null}>();
+ if(!row)throw new ServerFailure('E_VENDOR_LOG','blocker','The retained Batch result has no accounting record.');
+ if(row.cost_nano!==null)return null;
+ if(readRunBudget(JSON.parse(runner.run.budget_json)).mode!=='unlimited')throw new ServerFailure('E_SPEND_UNACCOUNTED','blocker','A Batch response has unresolved spending. New inference is stopped.');
+ return new ServerFailure('E_VENDOR_COST_UNKNOWN','document','This document stopped because the vendor response has no verified cost. The charge remains unresolved and this attempt was not retried.');
+}
 async function coordinateGroup(runner:Runner,pack:ProjectPack,group:BatchArtifact[],groupIndex:number):Promise<void>{
  const {store,env,run}=runner;
 
@@ -93,10 +112,15 @@ async function coordinateGroup(runner:Runner,pack:ProjectPack,group:BatchArtifac
   const correlated=await store.json<Awaited<ReturnType<typeof ingestBatchResults>>>(correlatedKey);
   const retry:BatchInputEntry[]=[];
   const validatedKey=await runner.stage(`batch-${groupIndex}-${schemaAttempt}-validate`,async()=>{
-   for(const missing of correlated.failures)await env.DB.prepare('UPDATE documents SET failure_json=? WHERE run_id=? AND fingerprint=?').bind(JSON.stringify({code:missing.code,message:missing.detail}),run.id,missing.customId).run();
+   for(const missing of correlated.failures){
+    const staged=missing.reference?await store.json<{result:BatchResult}>(missing.reference):null;
+    const isolated=staged?await retainedBatchCostFailure(runner,pack,`${batchKey}-${missing.customId}`,staged.result):null;
+    await env.DB.prepare('UPDATE documents SET failure_json=? WHERE run_id=? AND fingerprint=?').bind(JSON.stringify({code:isolated?.code??missing.code,message:isolated?.message??missing.detail}),run.id,missing.customId).run();
+   }
    for(const result of correlated.results){
     const staged=await store.json<{result:BatchResult}>(result.reference);const document=await store.document(run.id,result.customId);const uploaded=await store.json<Upload>(document.input_key!);
     try{
+     const isolated=await retainedBatchCostFailure(runner,pack,`${batchKey}-${result.customId}`,staged.result);if(isolated)throw isolated;
      const value=decodeReader(staged.result.response?.body,pack.pins.reader,pack.typeFile.types.map(type=>type.id),uploaded.fullText,undefined,pack.settings.readerEvidencePolicy);
      const key=await store.put(run.id,result.customId,'reader-validated',{value,evidenceComparisonPolicy:readerEvidencePolicy(pack.settings.readerEvidencePolicy),attemptIds:[`${batchKey}-${result.customId}`]});
      await env.DB.prepare('UPDATE documents SET reader_key=? WHERE run_id=? AND fingerprint=?').bind(key,run.id,result.customId).run();
@@ -153,7 +177,7 @@ export function batchResultStager(runner:Pick<Runner,'store'|'env'|'run'>,pack:P
     const recorded=await env.DB.prepare('INSERT OR IGNORE INTO vendor_calls(attempt_id,run_id,fingerprint,role,model_requested,model_returned,status,latency_ms,request_id,usage_json,cost_nano,raw_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(accountingId,run.id,value.customId,'reader',pack.pins.reader.id,typeof raw?.model==='string'?raw.model:null,value.result.response?.status_code??null,null,value.result.response?.request_id??null,hasUsage?JSON.stringify(usage):null,cost,key,now()).run();
     await store.event(run.id,value.customId,'batch','result_staged',{key,source:value.source,accountingId,accountingDisposition,charged:recorded.meta.changes===1&&cost!==null});
     if(recorded.meta.changes===1&&accountingFailure)await store.event(run.id,value.customId,'batch','accounting_failed',{accountingId,code:failure(accountingFailure).code});
-    // The ordinary inference guard will halt on unknown usage after the complete result stream is retained.
+    // The frozen admission policy decides whether unknown usage pauses new inference or isolates its document.
     // Do not abandon charges for later lines in an already-submitted job.
     return key;
 

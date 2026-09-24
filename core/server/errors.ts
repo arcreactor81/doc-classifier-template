@@ -14,6 +14,8 @@ export function failure(error: unknown): ServerFailure {
   return new ServerFailure('E_INTERNAL', 'blocker', error instanceof Error ? error.message : String(error), 500);
 }
 export const serverCopy = {
+  retainedResponseHeadline: 'A vendor error was recorded and its charge is unresolved.',
+  retainedResponseDiagnostic: 'This vendor response was stored successfully. Earlier software could report a concurrent spending-guard stop as a storage failure. The original stop code is preserved.',
   runHalted: 'This run has stopped. Review its recorded cause before starting another run.',
   runHaltAction: 'Keep this run and its records. Review the stopped-run details before explicitly starting any new work.',
   runSizeUnknownUsage: 'A document exceeded the confidence check token limit. Its usage was not returned, so the run stopped for review.',

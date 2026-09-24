@@ -160,3 +160,20 @@ test('approved production Sol retries only identical bytes and rejects Terra res
  assert.deepEqual(h.sent.map(sent=>sent.body),[sol.body,sol.body]);assert.equal(h.logs.at(-1)?.modelReturned,'gpt-6-sol');
  const drift=harness([ok()]);await assert.rejects(executeVendor(sol,policy,drift.deps,decode),{code:'E_TERRA_PIN_DRIFT',kind:'blocker'});assert.equal(drift.sent.length,1);assert.equal(drift.raw.length,1);
 });
+
+
+test('unknown-cost attempt isolates a document without retry or circuit escalation',async()=>{
+ for(const response of [new Response('upstream unavailable',{status:520}),new Response(JSON.stringify({model:request.model,value:true}),{status:200})]){
+  const h=harness([response,ok()]);h.deps.unknownCost=async()=>true;let decoded=false;h.deps.recordDocumentOutcome=async()=>{throw Error('Unknown cost must not become a vendor circuit');};
+  await assert.rejects(executeVendor(request,policy,h.deps,()=>{decoded=true;return true;}),{code:'E_VENDOR_COST_UNKNOWN',kind:'document'});
+  assert.equal(h.sent.length,1);assert.equal(h.raw.length,1);assert.equal(h.logs.length,1);assert.equal(decoded,false);assert.deepEqual(h.sleeps,[]);
+ }
+});
+test('isolated unknown cost never downgrades authentication or model drift blockers',async()=>{
+ for(const status of [401,403,404]){const h=harness([new Response('{}',{status})]);h.deps.unknownCost=async()=>true;await assert.rejects(executeVendor(request,policy,h.deps,decode),{kind:'blocker',code:status===404?'E_MODEL_REJECTED':'E_VENDOR_AUTH'});}
+ const h=harness([new Response(JSON.stringify({model:'unapproved-model'}),{status:200})]);h.deps.unknownCost=async()=>true;await assert.rejects(executeVendor(request,policy,h.deps,decode),{kind:'blocker',code:'E_TERRA_PIN_DRIFT'});
+});
+test('typed pre-request guard failure is not relabelled as failed raw persistence',async()=>{
+ const h=harness([new Error('guard')]);h.deps.persistRaw=async()=>{throw new ValidationFailure('E_SPEND_UNACCOUNTED','blocker','Budget cannot be checked.');};
+ await assert.rejects(executeVendor(request,policy,h.deps,decode),{code:'E_SPEND_UNACCOUNTED'});
+});

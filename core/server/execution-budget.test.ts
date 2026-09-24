@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import { guard,accountingGuard } from './execution.ts';
 import { authorizeRunBudget } from '../cost/run-budget.ts';
 import { Store } from './store.ts';
-function fixture(spend:{blended:string;openai:string;typesafe:string},unknown=0){
- const budget=authorizeRunBudget({mode:'limited',limits:{blended:null,openai:'100',typesafe:'200'},unlimitedAcknowledged:false},'person','2026-09-22');
+function fixture(spend:{blended:string;openai:string;typesafe:string},unknown=0,policy?:string,unlimited=false){
+ const budget=authorizeRunBudget(unlimited?{mode:'unlimited',limits:{blended:null,openai:null,typesafe:null},unlimitedAcknowledged:true}:{mode:'limited',limits:{blended:null,openai:'100',typesafe:'200'},unlimitedAcknowledged:false},'person','2026-09-22');
  const env={MODEL_CALLS_ENABLED:'true',DB:{prepare:(sql:string)=>({first:async()=>sql.includes('controls')?{kill:0}:{count:unknown},bind(){return this;}})}} as unknown as Env;
- const store={run:async()=>({status:'running',budget_json:JSON.stringify(budget)}),spendByVendor:async()=>spend} as unknown as Store;
+ const store={run:async()=>({status:'running',budget_json:JSON.stringify(budget),pack_json:JSON.stringify({settings:policy?{unknownSpendPolicy:policy}:{}})}),spendByVendor:async()=>spend} as unknown as Store;
  return{env,store};
 }
 test('execution guard stops before another vendor call at a vendor-only limit',async()=>{
@@ -65,4 +65,25 @@ test('real SQL guard stops unknown spend from failed or unanswered inference, no
   db.prepare('INSERT INTO vendor_calls VALUES(?,?,?,?,?)').run('run','reader',200,'{}','0');
   await guard(f.env,f.store,'run');
  }finally{db.close();}
+});
+
+test('new unlimited policy allows unrelated documents while legacy and capped runs retain unknown-spend stop',async()=>{
+ const spend={blended:'0',openai:'0',typesafe:'0'};
+ const allowed=fixture(spend,1,'isolate-unlimited-v1',true);await guard(allowed.env,allowed.store,'run');
+ const legacy=fixture(spend,1,undefined,true);await assert.rejects(()=>guard(legacy.env,legacy.store,'run'),{code:'E_SPEND_UNACCOUNTED'});
+ const capped=fixture(spend,1,'isolate-unlimited-v1');await assert.rejects(()=>guard(capped.env,capped.store,'run'),{code:'E_SPEND_UNACCOUNTED'});
+});
+test('unlimited isolation never bypasses the model gate or revives a halted run',async()=>{
+ const f=fixture({blended:'0',openai:'0',typesafe:'0'},1,'isolate-unlimited-v1',true);
+ f.env.MODEL_CALLS_ENABLED='false';await assert.rejects(()=>guard(f.env,f.store,'run'),{code:'E_MODEL_CALLS_DISABLED'});
+ f.env.MODEL_CALLS_ENABLED='true';const original=f.store.run;f.store.run=async id=>({...await original(id),status:'halted'});
+ await assert.rejects(()=>guard(f.env,f.store,'run'),{code:'E_RUN_STOPPED'});
+});
+
+test('new spend policy preserves kill-switch priority and reached-cap admission',async()=>{
+ const f=fixture({blended:'0',openai:'0',typesafe:'0'},1,'isolate-unlimited-v1',true);
+ f.env.DB={prepare:()=>({first:async()=>({kill:1})})} as unknown as D1Database;
+ await assert.rejects(()=>guard(f.env,f.store,'run'),{code:'E_KILL_SWITCH'});
+ const capped=fixture({blended:'100',openai:'100',typesafe:'0'},0,'isolate-unlimited-v1');
+ await assert.rejects(()=>guard(capped.env,capped.store,'run'),{code:'E_LIVE_BUDGET'});
 });

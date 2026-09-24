@@ -66,3 +66,6 @@ Owner approved versioned definition activation and the website editor ahead of p
 - [ ] Complete uncoached usability and remaining fresh-account/unauthorized-user acceptance.
 
 Reader evidence inspection also identified formatting-only rejections. New runs explicitly select whitespace-quotes-v1 while historical missing-field packs remain exact-substring-v1. Stored quotes stay unchanged; no fuzzy matching or word repair. Local replay evidence does not rewrite previous failures or claim a fresh live result.
+
+
+Owner frontend feedback (2026-09-24, explicitly deferred): no visible progress bar/activity; polling appears to refresh whole page while numbers stay unchanged; globally sharp borders; harsh/glary colours despite AAcontrast; generic typography/tabs; insufficient smoothness. Next iteration must update in place, distinguish progress-known versus ongoing activity, soften surfaces/borders/accents while retaining readable AA text, and improve typography/navigation. Owner immediately said to do this later; no frontend changes or deployment authorized during current run. Active run monitoring continues.
