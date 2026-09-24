@@ -11,11 +11,11 @@ import { batchReader } from './batch-runner.ts';
 import { Store } from './store.ts';
 import { failure,ServerFailure } from './errors.ts';
 import type { Upload } from './contracts.ts';
-export interface DocumentParams {runId:string;fingerprint:string}
+export interface DocumentParams {runId:string;fingerprint:string;recoveryId?:string}
 export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
  async run(event:WorkflowEvent<DocumentParams>,step:WorkflowStep):Promise<{decisionKey:string}|void>{
   const {runId,fingerprint}=event.payload,store=new Store(this.env),run=await store.run(runId);
-  const runner=new Runner(this.env,run,fingerprint,step);
+  const runner=new Runner(this.env,run,fingerprint,step,event.payload.recoveryId);
   try{
    await guard(this.env,store,runId);const pack=requireRunProject(JSON.parse(run.pack_json));
    const initial=await store.document(runId,fingerprint);if(initial.decision_json)return;
@@ -54,7 +54,8 @@ export class DocumentWorkflow extends WorkflowEntrypoint<Env,DocumentParams>{
    await finalize(store,runId);return{decisionKey};
   }catch(error){
    const issue=failure(error);
-   if(issue.kind==='blocker')await store.halt(runId,{code:issue.code,message:issue.message});
+   if(issue.code==='E_WORKFLOW_SUPERSEDED')return;
+   if(issue.kind==='blocker')await store.halt(runId,{code:issue.code,message:issue.message,fingerprint,recoveryId:event.payload.recoveryId??null},event.payload.recoveryId??null);
    else{
     const pack=requireRunProject(JSON.parse(run.pack_json));const doc=await store.document(runId,fingerprint);
     const decision=decide({notePolicy:pack.settings.decisionNotePolicy,confidenceStatePolicy:pack.settings.confidenceStatePolicy,typeIds:pack.typeFile.types.map(type=>type.id),threshold:run.threshold,failures:[issue.code],notes:JSON.parse(doc.notes_json)});

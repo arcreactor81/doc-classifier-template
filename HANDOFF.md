@@ -230,3 +230,10 @@ Owner found missing-source error after saving comparison labels. Browser reprodu
 
 ### Unknown-cost isolation release verification (2026-09-24)
 Explicit isolate-unlimited-v1 frozen setting permits unrelated documents in acknowledged unlimitedruns after unknown-cost attempt; affected document failswithoutretry and charge remainsunknown. Legacy/default and capped admission retains stop; globalsafetyrulesremain. Batch counterpart handles retainedresponse costs before schemaretry. Typedpre-dispatchguarderrors preserved instead of masked raw-persistencecode; oldstopdiagnosticssupplementedreadonly withoutrewritingcause. Exports include knownsubtotals/unresolvedcounts. Private394/public358tests plus22realretainedresponse/race/isolationchecks passed; existingruntimegatespassed. No liveinference, no oldrunresumption, no billingzeroassumptions. Broadfrontend/popuptransitionwork remainsdeferred.
+
+
+Runtimeacknowledgementrepair andexplicitcontinuationimplemented: exactouterlost-ACKreusescompleteD1key; callbackerrors/uncertainworkremainprotected. Immutablemanualrecoveryplan,newexecutionIDs,originalfrozencontract/budget,oldgenerationsfenced. LocalactualRunner/D1/R2faultinjection46assertions,114docrecoveryplan17assertions,APIroutes38assertions andconsentbrowsercheckspassed withzeroexternalvendorcalls. Livecontinuationremainsownerexplicitacceptance; noproductionrunautomaticallyresumed.
+
+
+### Runtime recovery release verification (2026-09-24)
+Private417/public381unit tests pass. Actual local Worker fault-injection46assertions,114-document localD1/R2recovery17assertions,recoveryAPI38assertions,andbrowserexplicitconsentflowpass;zeroexternalvendorcalls. Existingruntimegatesalso pass. EngineACKfixreusescompleteD1resultwithoutrepeatingpaidaction; oldgenerationcannotmutatehalt/routingaftercontinuation. Owner-only explicitrecovery keepssameinputs/run/comparison/frozenbudget andreservesfreshcontrolIDs, leavespriorWorkflowhistoryintact. No automaticlivecontinuationperformed. Publicreleaseexcludesprivatetrace/corpus/accountdata. Broadfrontenditeration remainsdeferred.

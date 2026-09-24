@@ -6,7 +6,7 @@ const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof va
 /** Read-only explanation: older releases overwrote halt_json, but retained the first halt event. */
 export async function readRunStopReason(store:Store,run:RunRow){
  if(run.status!=='halted')return null;
- const first=await store.env.DB.prepare("SELECT created_at,details_json FROM events WHERE run_id=? AND stage='run' AND kind='halted' ORDER BY created_at,rowid LIMIT 1").bind(run.id).first<HaltEvent>();
+ const first=await store.env.DB.prepare("SELECT created_at,details_json FROM events WHERE run_id=? AND stage='run' AND kind='halted' AND created_at>=COALESCE((SELECT MAX(created_at) FROM run_recoveries WHERE run_id=?),'') ORDER BY created_at,rowid LIMIT 1").bind(run.id,run.id).first<HaltEvent>();
  const raw:unknown=JSON.parse(first?.details_json??run.halt_json??'{}');
  const code=record(raw)&&typeof raw.code==='string'?raw.code:'E_RUN_HALTED';
  const message=record(raw)&&typeof raw.message==='string'?raw.message:code==='E_KILL_SWITCH'?serverCopy.runKilled:serverCopy.runHalted;

@@ -1,3 +1,5 @@
+import {inspectRunRecovery,recoverRun,recoveryProgress,canOfferRecovery} from './run-recovery.ts';
+import {recoveryReadiness} from './recovery-readiness.ts';
 import {readStoredCorrection,saveReference,readReference,comparisonForRun,validateReferenceLineage} from './feedback.ts';
 import {effectiveProject,definitionState,createDefinitionDraft,activateDefinition,requireEditor,runtimeDefinitions,activeDefinition} from './definitions.ts';
 import {dispatchRunDocuments} from './start-dispatch.ts';
@@ -102,8 +104,8 @@ async function start(env:Env,store:Store,run:RunRow,authentication:'legacy'|'clo
   readDocuments:()=>store.documents(run.id),
   create:async fingerprint=>{
    const id=await workflowInstanceId(run.id,fingerprint);
-   try{await env.DOCUMENT_WORKFLOW.create({id,params:{runId:run.id,fingerprint}});await env.DB.prepare('UPDATE documents SET workflow_id=? WHERE run_id=? AND fingerprint=?').bind(id,run.id,fingerprint).run();}
-   catch(error){await store.halt(run.id,{code:'E_WORKFLOW_START',detail:failure(error).message});throw new ServerFailure('E_WORKFLOW_START','blocker','A document workflow could not be started. The run has halted.');}
+   try{await env.DOCUMENT_WORKFLOW.create({id,params:{runId:run.id,fingerprint}});await env.DB.prepare('UPDATE documents SET workflow_id=? WHERE run_id=? AND fingerprint=? AND workflow_id IS NULL AND NOT EXISTS(SELECT 1 FROM run_recoveries WHERE run_id=documents.run_id)').bind(id,run.id,fingerprint).run();}
+   catch(error){await store.halt(run.id,{code:'E_WORKFLOW_START',detail:failure(error).message},null);throw new ServerFailure('E_WORKFLOW_START','blocker','A document workflow could not be started. The run has halted.');}
   },
   markComplete:async()=>{await env.DB.prepare("UPDATE runs SET status='complete' WHERE id=? AND status='running' AND expected_count=(SELECT COUNT(*) FROM documents WHERE run_id=? AND status='complete')").bind(run.id,run.id).run();},
  }));
@@ -153,10 +155,12 @@ async function handleRequest(request:Request,env:Env & {ASSETS?:Fetcher},cloudfl
   }
   const match=/^\/api\/runs\/([^/]+)(?:\/(.*))?$/.exec(path);if(!match)throw new ServerFailure('E_ROUTE','request','This API route does not exist.',404);
   const run=await authorizeRun(store,match[1],actor),action=match[2];
-  if(!action&&request.method==='GET'){const documents=await store.documents(run.id),spend=await store.spendByVendor(run.id),events=(await env.DB.prepare('SELECT * FROM events WHERE run_id=? ORDER BY created_at').bind(run.id).all()).results;return response({run:{id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:documents.filter(doc=>doc.status==='complete').length,mode:run.mode,textHeld:!!run.text_held,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),threshold:run.threshold,stopReason:await readRunStopReason(store,run)},documents:documents.map(doc=>({...doc,decision:doc.decision_json?JSON.parse(doc.decision_json):null})),events});}
+  if(!action&&request.method==='GET'){const documents=await store.documents(run.id),spend=await store.spendByVendor(run.id),events=(await env.DB.prepare('SELECT * FROM events WHERE run_id=? ORDER BY created_at').bind(run.id).all()).results;return response({run:{id:run.id,status:run.status,createdAt:run.created_at,total:run.expected_count,completed:documents.filter(doc=>doc.status==='complete').length,mode:run.mode,textHeld:!!run.text_held,spendNano:spend.blended,spend,budget:readRunBudget(JSON.parse(run.budget_json)),unaccountedCalls:await store.unaccounted(run.id),pendingAccounting:await store.pendingAccounting(run.id),threshold:run.threshold,recovery:await recoveryProgress(store,run.id,actor),recoveryAvailable:canOfferRecovery(run),stopReason:await readRunStopReason(store,run)},documents:documents.map(doc=>({...doc,decision:doc.decision_json?JSON.parse(doc.decision_json):null})),events});}
   const evidence=/^documents\/([^/]+)\/evidence$/.exec(action??'');
   if(evidence&&request.method==='GET')return response(await documentEvidence(store,run.id,evidence[1],actor));
   if(action==='documents'&&request.method==='POST')return await uploadDocument(request,env,store,run);
+  if(action==='recovery'&&request.method==='GET'){const inspected=await inspectRunRecovery(store,run.id,actor);await recoveryReadiness(store,inspected.run);return response({eligible:true,remaining:inspected.documents.length,mode:run.mode,budget:readRunBudget(JSON.parse(run.budget_json))});}
+  if(action==='recover'&&request.method==='POST'){const raw=await jsonBody(request);requireValue(object(raw),'Explicit continuation confirmation is required.');exact(raw,['acknowledged']);requireValue(raw.acknowledged===true,'Confirm continuation using the original spending settings.');return response(await recoverRun(store,run.id,actor,{acknowledged:true,assertReady:current=>recoveryReadiness(store,current)}));}
   if(action==='start'&&request.method==='POST')return await start(env,store,run,authentication);
   if(action==='close'&&request.method==='POST'){await store.close(run.id,actor);return response({closed:true});}
   if(action==='results'&&request.method==='GET')return response(await manifestFor(store,run));

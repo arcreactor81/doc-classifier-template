@@ -67,9 +67,11 @@ export class Store {
    fail:async(name,error)=>{await this.env.DB.prepare("UPDATE checkpoints SET status='failed',error_code=?,error_kind=?,error_detail=?,finished_at=? WHERE run_id=? AND fingerprint=? AND name=? AND status='running'").bind(error.code,error.kind,error.message,now(),runId,fingerprint,name).run();},
   };
  }
- async halt(runId:string,details:unknown):Promise<void>{
+ async halt(runId:string,details:unknown,expectedRecoveryId?:string|null):Promise<void>{
   // Only the first transition records the cause; concurrent workflow guards must not replace it.
-  const changed=await this.env.DB.prepare("UPDATE runs SET status='halted',halt_json=? WHERE id=? AND status IN('uploading','running')").bind(JSON.stringify(details),runId).run();
+  const fence=expectedRecoveryId===undefined?'':expectedRecoveryId===null?' AND NOT EXISTS(SELECT 1 FROM run_recoveries WHERE run_id=runs.id)':' AND (SELECT id FROM run_recoveries WHERE run_id=runs.id ORDER BY generation DESC LIMIT 1)=?';
+  const parameters=expectedRecoveryId===undefined||expectedRecoveryId===null?[JSON.stringify(details),runId]:[JSON.stringify(details),runId,expectedRecoveryId];
+  const changed=await this.env.DB.prepare("UPDATE runs SET status='halted',halt_json=? WHERE id=? AND status IN('uploading','running')"+fence).bind(...parameters).run();
   await this.event(runId,null,'run',changed.meta.changes===1?'halted':'halt_observed',details);
  }
  async close(runId:string,actor:string):Promise<void>{

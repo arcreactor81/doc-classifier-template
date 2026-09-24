@@ -35,8 +35,9 @@ export async function batchReader(runner:Runner,pack:ProjectPack,request:FrozenV
  const {store,env,run,fingerprint}=runner;
  const requestKey=await runner.stage('batch-request',async()=>request,true);
  await runner.stage('batch-register',async()=>{await env.DB.prepare('INSERT INTO batch_requests(run_id,fingerprint,request_key) VALUES(?,?,?)').bind(run.id,fingerprint,requestKey).run();return{requestKey};});
+ const waitScope=runner.recoveryId?'recovery-'+runner.recoveryId+'-':'';
  for(let tick=0;;tick++){
-  const statusKey=await runner.stage(`batch-wait-${tick}`,async()=>{
+  const statusKey=await runner.stage(`batch-wait-${waitScope}${tick}`,async()=>{
    const document=await store.document(run.id,fingerprint);if(document.reader_key)return{result:document.reader_key};if(document.failure_json)return{failure:JSON.parse(document.failure_json)};
    const waiting=await env.DB.prepare('SELECT COUNT(*) AS count FROM batch_requests WHERE run_id=?').bind(run.id).first<{count:number}>();
    const completed=await env.DB.prepare("SELECT COUNT(*) AS count FROM documents WHERE run_id=? AND status='complete' AND fingerprint NOT IN(SELECT fingerprint FROM batch_requests WHERE run_id=?)").bind(run.id,run.id).first<{count:number}>();
@@ -47,7 +48,7 @@ export async function batchReader(runner:Runner,pack:ProjectPack,request:FrozenV
   if(status.result)return status.result;
   if(status.failure)throw new ServerFailure(status.failure.code,'document',status.failure.message);
   if(status.leader){await coordinate(runner,pack);continue;}
-  await runner.step.sleep(`batch-wait-delay-${tick}`,'30 seconds');
+  await runner.step.sleep(`batch-wait-delay-${waitScope}${tick}`,'30 seconds');
  }
 }
 /** Evaluate retained accounting only after the entire submitted result stream has been saved. */

@@ -69,3 +69,5 @@ Reader evidence inspection also identified formatting-only rejections. New runs 
 
 
 Owner frontend feedback (2026-09-24, explicitly deferred): no visible progress bar/activity; polling appears to refresh whole page while numbers stay unchanged; globally sharp borders; harsh/glary colours despite AAcontrast; generic typography/tabs; insufficient smoothness. Next iteration must update in place, distinguish progress-known versus ongoing activity, soften surfaces/borders/accents while retaining readable AA text, and improve typography/navigation. Owner immediately said to do this later; no frontend changes or deployment authorized during current run. Active run monitoring continues.
+
+Owner clarification (2026-09-24): new window meant an in-page transition state, NOT a popup or separate browser window. This supersedes the earlier dedicated-window requirement. Convert the existing popup during the explicitly deferred frontend iteration; do not revive the old requirement.

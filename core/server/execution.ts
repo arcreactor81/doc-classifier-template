@@ -10,6 +10,8 @@ import { executeVendor, type CallLog, type RawAttempt, type TransportDependencie
 import { verifyModelPolicy,type FrozenVendorRequest,type VendorRole } from '../vendors/requests.ts';
 import { Store,now,type RunRow } from './store.ts';
 import { checkpoint } from './checkpoint.ts';
+import { workflowReference } from './workflow-ack.ts';
+import { assertWorkflowGeneration } from './workflow-generation.ts';
 import { pricingFor } from './capabilities.ts';
 import { ServerFailure } from './errors.ts';
 export async function guard(env:Env,store:Store,runId:string):Promise<void>{
@@ -33,10 +35,23 @@ export async function accountingGuard(env:Env,store:Store,runId:string,batchId:s
  if(!owned)throw new ServerFailure('E_BATCH_ACCOUNTING_SCOPE','blocker','Only an already submitted Batch job belonging to this run may be reconciled.');
 }
 export class Runner {
- readonly env:Env;readonly store:Store;readonly run:RunRow;readonly fingerprint:string;readonly step:WorkflowStep;
- constructor(env:Env,run:RunRow,fingerprint:string,step:WorkflowStep){this.env=env;this.store=new Store(env);this.run=run;this.fingerprint=fingerprint;this.step=step;}
+ readonly env:Env;readonly store:Store;readonly run:RunRow;readonly fingerprint:string;readonly step:WorkflowStep;readonly recoveryId?:string;
+ constructor(env:Env,run:RunRow,fingerprint:string,step:WorkflowStep,recoveryId?:string){this.env=env;this.store=new Store(env);this.run=run;this.fingerprint=fingerprint;this.step=step;this.recoveryId=recoveryId;}
+ async executionGuard():Promise<void>{
+  await assertWorkflowGeneration(this.store,this.run.id,this.recoveryId);
+  await guard(this.env,this.store,this.run.id);
+ }
  async reference(name:string,action:()=>Promise<string>):Promise<string>{
-  return this.step.do(name,{retries:{limit:0,delay:'1 second',backoff:'constant'},timeout:'15 minutes'},async()=>checkpoint(this.store.checkpoints(this.run.id,this.fingerprint),()=>guard(this.env,this.store,this.run.id),name,action));
+  await assertWorkflowGeneration(this.store,this.run.id,this.recoveryId);
+  return workflowReference(name,{
+   execute:callback=>this.step.do(name,{retries:{limit:0,delay:'1 second',backoff:'constant'},timeout:'15 minutes'},callback),
+   checkpoint:()=>checkpoint(this.store.checkpoints(this.run.id,this.fingerprint),()=>this.executionGuard(),name,action),
+   readCompleted:async()=>{
+    const row=await this.env.DB.prepare('SELECT status,artifact_key FROM checkpoints WHERE run_id=? AND fingerprint=? AND name=?').bind(this.run.id,this.fingerprint,name).first<{status:string;artifact_key:string|null}>();
+    return row?.status==='complete'?row.artifact_key:null;
+   },
+   recovered:async source=>{await this.store.event(this.run.id,this.fingerprint,name,'workflow_ack_recovered',{source,policy:'completed-checkpoint-ack-v1'});},
+  });
  }
  async accountingStage<T>(name:string,batchId:string,action:()=>Promise<T>):Promise<string>{
   return this.step.do(name,{retries:{limit:0,delay:'1 second',backoff:'constant'},timeout:'15 minutes'},async()=>checkpoint(this.store.checkpoints(this.run.id,this.fingerprint),()=>accountingGuard(this.env,this.store,this.run.id,batchId),name,async()=>{
@@ -53,11 +68,12 @@ export class Runner {
   });
  }
  async admission(role:VendorRole,nextAttempt:number):Promise<void>{
+  await assertWorkflowGeneration(this.store,this.run.id,this.recoveryId);
   // Existing checkpoints represent dispatched/completed/uncertain work and are never sent again.
   const prior=await this.env.DB.prepare('SELECT status FROM checkpoints WHERE run_id=? AND fingerprint=? AND name=?').bind(this.run.id,this.fingerprint,role+'-http-'+nextAttempt).first();
   if(prior)return;
   const scope=providerScope(role);
-  await awaitProviderAdmission({now:Date.now,guard:()=>guard(this.env,this.store,this.run.id),readDeadline:()=>readProviderCooldown(this.env.DB,scope),waitUntil:async until=>{
+  await awaitProviderAdmission({now:Date.now,guard:()=>this.executionGuard(),readDeadline:()=>readProviderCooldown(this.env.DB,scope),waitUntil:async until=>{
    const name=role+'-admission-'+nextAttempt+'-'+until;
    await this.stage(name,async()=>{await this.store.event(this.run.id,this.fingerprint,'provider_cooldown','waiting',{scope,until});return{scope,until};});
    // Absolute timestamp and stable name prevent replay from adding another relative delay.
@@ -72,7 +88,7 @@ export class Runner {
   const deps:TransportDependencies={
    awaitAdmission:()=>this.admission(role,index+1),
    observeRetryAfter:attempt=>observeProviderCooldown(this.env.DB,role,attempt.attemptId,attempt.retryAfter!),
-   guard:()=>guard(this.env,this.store,this.run.id),
+   guard:()=>this.executionGuard(),
    readSecret:async requested=>requested==='confidence'?this.env.JEV_API_KEY.get():this.env.OPENAI_API_KEY.get(),
    now:Date.now,
    attemptId:()=>activeId=`${this.run.id}-${this.fingerprint}-${role}-${++index}`,
