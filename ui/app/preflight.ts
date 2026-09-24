@@ -53,7 +53,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
         }
       } finally { store.close(); }
     }
-    let pending: number;
+    notice.textContent=c.startingClassification;let pending: number;
     const stopped = (status: string | undefined) => ['halted', 'complete', 'closing', 'closed', 'failed'].includes(status ?? '');
     do {
       let launched: { started: number; pending: number; status?: string };
@@ -88,7 +88,7 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
     invalidate();const localId=session();if(!localId)throw new Error(c.chooseFirst);if(localStorage.getItem('server-run:'+localId))throw new Error(c.alreadyConfirmed);
     await refreshLocalEstimate(localId);if(session()!==localId){invalidate();throw new Error(c.extractionIncomplete);}
   });
-  const confirm=action(c.confirm,async()=>{
+  let monitor:Window|null=null;const confirm=action(c.confirm,async()=>{
     if(!quote||session()!==quotedLocalId)throw new Error(c.chooseFirst);
     if(localStorage.getItem('server-run:'+quotedLocalId))throw new Error(c.alreadyConfirmed);
     const {items,pack}=await prepared(quotedLocalId),documents=items.map(item=>item.quote);
@@ -96,14 +96,14 @@ export function attachRunPreflight(host: HTMLElement, mode: HTMLSelectElement, o
     if(JSON.stringify(pack)!==quotedPack){acknowledge.checked=false;await refreshLocalEstimate(quotedLocalId);throw new Error(c.estimateChanged);}
     const budget=readBudget();
     // This explicit confirmation is the first point at which any extracted-document metadata is sent.
-    const server=await options.request<Quote>('/api/quote',{documents,mode:quote.mode});
+    const server=await options.request<Quote>('/api/quote',{documents,mode:quote.mode,...(localStorage.getItem('workspace-reference')?{referenceId:localStorage.getItem('workspace-reference')}: {})});
     if(server.typeVersion!==quotedType||server.mode!==quote.mode){
       acknowledge.checked=false;await refreshLocalEstimate(quotedLocalId);output.append(element('p',c.estimateChanged));throw new Error(c.estimateChanged);
     }
     const created=await options.request<{runId:string}>('/api/runs',{quoteId:server.quoteId,budget});
-    localStorage.setItem('server-run:'+quotedLocalId,created.runId);await uploadAndStart(quotedLocalId,created.runId);
+    localStorage.setItem('server-run:'+quotedLocalId,created.runId);localStorage.setItem('workspace-active-run',created.runId);if(monitor&&!monitor.closed)monitor.location.hash='runs/'+encodeURIComponent(created.runId);await uploadAndStart(quotedLocalId,created.runId);
   });
-  confirm.className = 'primary';
+  const confirmAction=confirm.onclick;confirm.onclick=event=>{monitor=window.open(location.pathname+'#monitor','document-run-progress','popup,width=1150,height=850');confirmAction?.call(confirm,event);if(!monitor)feedback.append(element('p',c.monitorFallback));};confirm.className = 'primary';
   const resume = action(c.resumeUpload, async () => { const localId = session(), runId = localId && localStorage.getItem('server-run:' + localId); if (!localId || !runId) throw new Error(c.chooseFirst); await uploadAndStart(localId, runId); });
   function update(): void {
     let validBudget=false;try{readBudget();validBudget=true;budgetError.textContent='';}catch(error){budgetError.textContent=error instanceof Error?error.message:c.invalidBudget;}

@@ -1,3 +1,4 @@
+import type {ReaderEvidencePolicy} from './evidence-policy.ts';
 import { validateTypes, type ModelPin, type TypeFile } from '../config/project.ts';
 import { ValidationFailure, validateConfidence, validateReader, type ConfidenceOutput, type ReaderOutput } from './validate.ts';
 
@@ -129,10 +130,10 @@ function responseJson(raw: unknown, pin: ModelPin, role: 'reader' | 'recovery', 
   schema(record(value), role, 'Structured output must be an object.');
   return { model: raw.model, value };
 }
-export function decodeReader(raw: unknown, pin: ModelPin, typeIds: readonly string[], text: string, evaluation?: ReaderEvaluationPolicy): ReaderOutput {
+export function decodeReader(raw: unknown, pin: ModelPin, typeIds: readonly string[], text: string, evaluation?: ReaderEvaluationPolicy, evidencePolicy?:ReaderEvidencePolicy): ReaderOutput {
   const { model, value } = responseJson(raw, pin, 'reader', evaluation);
   schema(exact(value, ['verdicts']), 'reader', 'Structured output contains unexpected fields.');
-  return validateReader({ model, verdicts: value.verdicts }, { pin: model, typeIds, text });
+  return validateReader({ model, verdicts: value.verdicts }, { pin: model, typeIds, text, evidencePolicy });
 }
 export function decodeRecovery(raw: unknown, pin: ModelPin, evaluation?: ReaderEvaluationPolicy): { model: string; headings: string[] } {
   const { model, value } = responseJson(raw, pin, 'recovery', evaluation);

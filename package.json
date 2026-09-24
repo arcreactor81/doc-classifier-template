@@ -41,6 +41,9 @@
       },
       "MODEL_CALLS_ENABLED": {
         "description": "Keep false during setup. Enable only after Health blockers are resolved and spending is approved."
+      },
+      "DEFINITION_EDITORS": {
+        "description": "Category editors: an owner-controlled list of signed-in account identifiers. Leave [] during setup, then follow the Categories editor-access instructions."
       }
     }
   }

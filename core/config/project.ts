@@ -6,11 +6,13 @@ export interface DocumentType { id:string; name:string; what:string; not_for:str
 export interface TypeFile { types:DocumentType[]; none_of_these:{name:string;what:string} }
 export interface ModelPin { id:string; date:string; reason:string; policy:'versioned'|'owner_approved_alias' }
 export interface ProjectSettings {
+ readerEvidencePolicy?:'exact-substring-v1'|'whitespace-quotes-v1';
  decisionNotePolicy:DecisionNotePolicy; confidenceStatePolicy:ConfidenceStatePolicy; digestBudget?:number|null; readerEffort:'low'|'medium'; readerMaxOutputTokens:number; recoveryMaxOutputTokens:number;
  recoveryMinimumHeadings:number; minimumFiledCount:number; batchCutoff:number; defaultMode:'interactive'|'batch';
  pdfPolicy:{largeFontRatio:number;maxHeadingCharacters:number;topPageFraction:number;gapRatio:number};
 }
 export interface ProjectPack {
+ definitionRevisionId?:string; displayNames?:Record<string,string>; definitionThreshold?:number; definitionThresholdJustification?:string; definitionThresholdStatus?:'untested'|'unverified'|'calibrated';
  prices:{verifiedAt:string;source:string[];interactive:{confidence:TokenRates;reader:TokenRates;recovery:TokenRates};batch:{confidence:TokenRates;reader:TokenRates;recovery:TokenRates}};
  schemaVersion:1; id:string; productName:string; copyOverrides?:Record<string,string>; typeFile:TypeFile; structuralVocabulary:string[];
  settings:ProjectSettings; pins:{confidence:ModelPin;reader:ModelPin;recovery:ModelPin};
@@ -63,6 +65,7 @@ export function validateProject(value:unknown):ConfigIssue[]{
   }
  }
  const settings=value.settings;
+ if(record(settings)&&settings.readerEvidencePolicy!==undefined&&!['exact-substring-v1','whitespace-quotes-v1'].includes(String(settings.readerEvidencePolicy)))issue('settings.readerEvidencePolicy','Unknown reader evidence policy.');
  if(!record(settings))issue('settings','Explicit settings are required.');
  else{
   for(const field of ['readerMaxOutputTokens','recoveryMaxOutputTokens','recoveryMinimumHeadings','minimumFiledCount','batchCutoff'])

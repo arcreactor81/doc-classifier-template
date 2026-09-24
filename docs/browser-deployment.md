@@ -40,9 +40,28 @@ Existing installations with explicit authentication settings retain their curren
 
 ## Finish setup, then activate
 
-Open /health. Resolve its numbered blockers: project definitions, model configuration, verified pricing and the explicit full structured-state policy. The generic pack deliberately contains no invented taxonomy or spending authorization. A coding harness is optional for editing the project pack; GitHub's web editor can commit changes.
+The current category editor is an implementation candidate. Its local storage and API checks pass; a complete deployed, unassisted first-owner walkthrough remains an acceptance task.
 
-Supplying keys does not activate inference. While calls are disabled, Health intentionally remains NOT READY. Once its only remaining blocker is E_MODEL_CALLS_DISABLED, and the deployment owner approves activation, change MODEL_CALLS_ENABLED to true in the repository and commit. Wait for the build to finish, then confirm /health reports READY. Do not interpret a successful deployment as successful model validation. The current release does not require a local tokenizer.
+### Name your category editors once
+
+Sign-in access and editing permission are separate. An allowed user can run and review documents. Only people explicitly named by the deployment owner can save and activate category definitions. The first visitor never becomes an administrator automatically.
+
+1. Sign in and open **Categories**. Expand **Editor access setup** and copy **Your signed-in account identifier**. This is the app's stable identity for the signed-in person, not an email address or vendor credential.
+2. The deployment owner sets `DEFINITION_MODE` to `runtime` and adds the intended identifiers to `DEFINITION_EDITORS`, a JSON array encoded as a configuration string. For example, the value is `["copied-account-identifier"]`; multiple editors are `["first-identifier","second-identifier"]`.
+3. Keep these values in the deployed environment's configuration in `wrangler.jsonc` so later builds preserve the owner's choices. The repository's browser editor is sufficient for this one-time administrator setup; no local installation is needed. Do not put vendor keys in that file. In JSON configuration, an example property is `"DEFINITION_EDITORS": "[\"copied-account-identifier\"]"`.
+4. Commit the administration change and wait for its Cloudflare build and deployment. Return to **Categories** using the same signed-in account. The category editing controls should now be available. An empty array authorizes nobody; a missing or malformed allowlist never grants access.
+
+The application exposes your identity so the deployment owner can configure it; copying it does not itself grant permission. Existing owners using explicit authentication must use the identifier returned by their own installation, not invent a native sign-in identifier.
+
+`runtime` makes activated website definitions authoritative for new runs. `git` retains the legacy project-pack behavior and does not enable website activation. An empty runtime installation deliberately waits for an editor to create and explicitly activate its first complete category set; the seed is not silently activated.
+
+### Define categories, then enable model calls
+
+Open **Categories**, provide the category meanings, exclusions and reviewed examples, choose **Save for review**, and then **Activate these categories**. See the [category workflow](category-workflow.md) for the complete correction-to-next-run sequence. These routine category updates need no repository edit or intermediate download.
+
+Open **Health** and resolve its remaining configuration, storage or pricing blockers. New definitions are visibly untested and begin at threshold 0.90. Supplying keys and activating categories do not activate inference. While model calls are disabled, Health intentionally remains **NOT READY**.
+
+When disabled model calls are the only remaining blocker, and the deployment owner approves spending, change `MODEL_CALLS_ENABLED` to `true` in the deployed environment's repository configuration. Wait for the build, then confirm **Health** reports **READY**. Readiness is not a claim of measured accuracy. The current release does not require a local tokenizer.
 
 ## Updates and troubleshooting
 
@@ -60,7 +79,7 @@ Verified on a fresh copy on 2026-09-23: a new repository, separate D1/R2, both S
 
 For another installation, use a new repository and independent resources. Confirm the setup creates D1, R2 and both Secrets Store bindings, records the provisioned names/IDs in the clone, and completes migrations before deployment. Confirm the Workflow appears with the deployed class. The build gate deliberately rejects uncommitted application changes; resource identity rewrites alone are allowed. New copies derive an installation-specific Workflow name from the configured Worker name and binding. Existing custom names are preserved. Keep installation configuration when updating application code; do not replace an existing Workflow name with the new-install marker.
 
-After enabling sign-in, check denial for unauthorized people and a successful signed-in Runs request without an authentication-settings commit. A login page or visible website alone does not verify that the app received a trusted identity. Then define the project types in projects/generic/project.json through the web editor, finish Health setup, and explicitly activate. These browser checks remain unverified on a fresh account; passing repository tests does not replace them.
+After enabling sign-in, check denial for unauthorized people and a successful signed-in Runs request without an authentication-settings commit. A login page or visible website alone does not verify that the app received a trusted identity. Then configure the editor allowlist, define and explicitly activate categories through the website, and finish Health setup. These browser checks remain unverified on a fresh account; passing repository tests does not replace them.
 
 
 The deployment API token must have the permissions needed for Workers and its storage bindings/migrations, including Account Secrets Store Edit. Both bound secrets must include the workers scope. A successful GitHub test run alone does not establish that Cloudflare deployment succeeded; verify the Workers Builds deployment log and the deployed Health page.

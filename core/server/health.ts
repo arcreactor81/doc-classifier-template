@@ -1,3 +1,4 @@
+import {effectiveProject,runtimeDefinitions,activeDefinition} from './definitions.ts';
 import { readVendorHealth,type VendorHealth } from './vendor-health.ts';
 import rawProject from 'project-pack' with {type:'json'};
 import { validateProject, typeVersion, type ProjectPack } from '../config/project.ts';
@@ -9,8 +10,10 @@ export const projectSource=rawProject;
 export async function health(env:Env & LegacyAccessBindings,authentication:'legacy'|'cloudflare'='legacy'):Promise<Record<string,unknown>>{
  const blockers:{code:string;headline:string;action:string;details?:unknown}[]=[];
  const add=(code:string,headline:string,details?:unknown)=>blockers.push({code,headline,action:serverCopy.action,...(details?{details}:{})});
- for(const issue of validateProject(rawProject))add(issue.code,issue.detail,{path:issue.path});
- const pack=(rawProject&&typeof rawProject==='object'?rawProject:{}) as Partial<ProjectPack>;
+ let source:unknown=rawProject;
+ try{if(runtimeDefinitions(env))source=await effectiveProject(env,rawProject);}catch(error){add(error instanceof ServerFailure?error.code:'E_DEFINITIONS_STORAGE',error instanceof Error?error.message:'Category definitions are unavailable.');}
+ for(const issue of validateProject(source))add(issue.code,issue.detail,{path:issue.path});
+ const pack=(source&&typeof source==='object'?source:{}) as Partial<ProjectPack>;
  if(pack.id!==String(env.PROJECT_ID))add('E_PROJECT_BINDING','The deployed project identity differs from its selected Git pack.');
  for(const mode of ['interactive','batch'] as const){try{pricingFor(pack as ProjectPack,mode);}catch(error){add('E_PRICING_UNVERIFIED','Published prices must be recorded before a run can start.',{mode});}}
  if(String(env.MODEL_CALLS_ENABLED)!=='true')add('E_MODEL_CALLS_DISABLED','Model calls are disabled by the deployment.');
@@ -24,7 +27,7 @@ export async function health(env:Env & LegacyAccessBindings,authentication:'lega
   const control=await env.DB.prepare('SELECT * FROM controls WHERE id=1').first<{kill:number;threshold:number;threshold_justification:string}>();
   if(!control)throw new Error('Controls were not initialized.');
   if(control.kill)add('E_KILL_SWITCH','The kill switch is set.');
-  threshold={value:control.threshold,justification:control.threshold_justification};
+  threshold=pack.definitionRevisionId?{value:pack.definitionThreshold,justification:pack.definitionThresholdJustification,status:pack.definitionThresholdStatus}:{value:control.threshold,justification:control.threshold_justification};
   vendorHistory=await readVendorHealth(env.DB);
   textHeldRuns=(await env.DB.prepare('SELECT COUNT(*) AS count FROM runs WHERE text_held=1').first<{count:number}>())?.count??0;
  }catch(error){add('E_STORAGE_D1','The database write probe failed.',{detail:error instanceof Error?error.message:String(error)});}
@@ -40,6 +43,6 @@ export async function health(env:Env & LegacyAccessBindings,authentication:'lega
  for(const [name,binding] of [['reader',env.OPENAI_API_KEY],['confidence',env.JEV_API_KEY]] as const){
   try{if(!binding||!await binding.get())add('E_VENDOR_KEY','A vendor credential is missing.',{role:name});}catch{add('E_VENDOR_KEY','A vendor credential could not be read.',{role:name});}
  }
- return{status:blockers.length?'NOT READY':'READY',blockers,versions:{build:env.BUILD_COMMIT,pins:pack.pins??null},project:{id:typeof pack.id==='string'?pack.id:null,productName:typeof pack.productName==='string'?pack.productName:null,typeVersion:pack.typeFile?await typeVersion(JSON.stringify(pack.typeFile)):null,types:Array.isArray(pack.typeFile?.types)?pack.typeFile.types:null,copyOverrides:pack.copyOverrides},modelCallsEnabled:String(env.MODEL_CALLS_ENABLED)==='true',textHeldRuns,threshold,vendorStatus:vendorHistory.status,vendorHistory};
+ return{status:blockers.length?'NOT READY':'READY',blockers,versions:{build:env.BUILD_COMMIT,pins:pack.pins??null},project:{definitionRevisionId:pack.definitionRevisionId,displayNames:pack.displayNames,definitionThresholdStatus:pack.definitionThresholdStatus,id:typeof pack.id==='string'?pack.id:null,productName:typeof pack.productName==='string'?pack.productName:null,typeVersion:pack.typeFile?await typeVersion(JSON.stringify(pack.typeFile)):null,types:Array.isArray(pack.typeFile?.types)?pack.typeFile.types:null,copyOverrides:pack.copyOverrides},modelCallsEnabled:String(env.MODEL_CALLS_ENABLED)==='true',textHeldRuns,threshold,vendorStatus:vendorHistory.status,vendorHistory};
 }
 export async function requireReady(env:Env & LegacyAccessBindings,authentication:'legacy'|'cloudflare'='legacy'):Promise<void>{const status=await health(env,authentication);if(status.status!=='READY')throw new ServerFailure('E_NOT_READY','blocker',serverCopy.notReady);}

@@ -1,3 +1,4 @@
+import {readerEvidencePolicy} from '../vendors/evidence-policy.ts';
 import {retryAfterDeadline} from './provider-cooldown.ts';
 import { BatchReadRateLimitFailure, uploadBatchInput,createBatch,pollBatch,ingestBatchResults,type BatchDependencies,type BatchSnapshot,type BatchInputEntry } from '../vendors/batch.ts';
 import { decodeReader,verifyModelPolicy,type FrozenVendorRequest,type BatchResult } from '../vendors/requests.ts';
@@ -96,8 +97,8 @@ async function coordinateGroup(runner:Runner,pack:ProjectPack,group:BatchArtifac
    for(const result of correlated.results){
     const staged=await store.json<{result:BatchResult}>(result.reference);const document=await store.document(run.id,result.customId);const uploaded=await store.json<Upload>(document.input_key!);
     try{
-     const value=decodeReader(staged.result.response?.body,pack.pins.reader,pack.typeFile.types.map(type=>type.id),uploaded.fullText);
-     const key=await store.put(run.id,result.customId,'reader-validated',{value,attemptIds:[`${batchKey}-${result.customId}`]});
+     const value=decodeReader(staged.result.response?.body,pack.pins.reader,pack.typeFile.types.map(type=>type.id),uploaded.fullText,undefined,pack.settings.readerEvidencePolicy);
+     const key=await store.put(run.id,result.customId,'reader-validated',{value,evidenceComparisonPolicy:readerEvidencePolicy(pack.settings.readerEvidencePolicy),attemptIds:[`${batchKey}-${result.customId}`]});
      await env.DB.prepare('UPDATE documents SET reader_key=? WHERE run_id=? AND fingerprint=?').bind(key,run.id,result.customId).run();
     }catch(error){const issue=failure(error);if(issue.kind==='blocker')throw issue;
      if(issue.code==='E_READER_SCHEMA'&&schemaAttempt===1)retry.push(entries.find(entry=>entry.customId===result.customId)!);

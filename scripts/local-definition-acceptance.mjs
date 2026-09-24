@@ -1,0 +1,37 @@
+import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
+import {build} from 'esbuild';
+import {readFile,readdir} from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const compiled=await build({stdin:{contents:"import {handleWithCloudflareIdentity} from './core/server/api.ts';export default {fetch(r,e){return handleWithCloudflareIdentity(r,e,r.headers.get('X-Test-Actor')||'editor');}}",resolveDir:process.cwd()},bundle:true,write:false,format:'esm',platform:'browser',alias:{'project-pack':path.resolve('projects/validation/project.json')}});
+let checks=0;const check=(a,b)=>{assert.deepEqual(a,b);checks++;};
+const mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:compiled.outputFiles[0].text,compatibilityDate:'2026-09-22',d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{DEFINITION_MODE:'runtime',DEFINITION_EDITORS:'["editor"]'},outboundService:()=>{throw Error('No remote calls permitted');}}));
+try{
+const db=await mf.getD1Database('DB');for(const name of(await readdir('migrations')).filter(n=>n.endsWith('.sql')).sort())await db.exec(await readFile('migrations/'+name,'utf8'));
+const call=async(url,body,actor='editor')=>{const r=await mf.dispatchFetch('http://localhost/api/'+url,{method:body?'POST':'GET',headers:{'content-type':'application/json','X-Test-Actor':actor},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
+const first=await call('definitions');check(first.status,200);check(first.body.active,null);check(first.body.canEdit,true);check((await call('definitions',null,'reader')).body.canEdit,false);
+const draftBody={baseRevisionId:null,typeFile:first.body.seedTypeFile,displayNames:{}};
+check((await call('definitions/drafts',draftBody,'reader')).status,403);
+const a=await call('definitions/drafts',draftBody),b=await call('definitions/drafts',draftBody);check(a.status,201);check(b.status,201);
+const activated=await call('definitions/'+a.body.id+'/activate',{inheritThreshold:false});check(activated.status,200);check(activated.body.active.threshold,.9);check(activated.body.active.thresholdStatus,'untested');check((await call('definitions/'+b.body.id+'/activate',{inheritThreshold:false})).status,409);
+await assert.rejects(()=>db.prepare('UPDATE definition_revisions SET type_version=? WHERE id=?').bind('mutated',a.body.id).run());checks++;
+await db.prepare("UPDATE definition_active SET threshold=.97,threshold_status='calibrated'").run();
+const cosmetic=await call('definitions/drafts',{...draftBody,baseRevisionId:a.body.id,displayNames:{[draftBody.typeFile.types[0].id]:'Readable category'}});check(cosmetic.status,201);const c=await call('definitions/'+cosmetic.body.id+'/activate',{inheritThreshold:false});check(c.body.active.threshold,.97);check(c.body.active.thresholdStatus,'calibrated');
+const semantic=structuredClone(draftBody);semantic.baseRevisionId=c.body.active.id;semantic.typeFile.types[0].examples.push('A different generic example');const d=await call('definitions/drafts',semantic);check(d.status,201);const e=await call('definitions/'+d.body.id+'/activate',{inheritThreshold:true});check(e.body.active.threshold,.97);check(e.body.active.thresholdStatus,'unverified');
+const reset=await call('definitions/drafts',{...draftBody,baseRevisionId:e.body.active.id});const f=await call('definitions/'+reset.body.id+'/activate',{inheritThreshold:false});check(f.body.active.threshold,.9);check(f.body.active.thresholdStatus,'untested');
+const project=await call('project');check(project.body.definitionRevisionId,f.body.active.id);check(project.body.typeFile,draftBody.typeFile);
+const contenders=await Promise.all([call('definitions/drafts',{...draftBody,baseRevisionId:f.body.active.id}),call('definitions/drafts',{...draftBody,baseRevisionId:f.body.active.id})]);const attempts=await Promise.all(contenders.map(d=>call('definitions/'+d.body.id+'/activate',{inheritThreshold:false})));check(attempts.map(x=>x.status).sort(),[200,409]);
+const current=(await call('definitions')).body.active;const pack=(await call('project')).body;
+await db.prepare("INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES('q','editor','now','interactive',?,'hash','[]','{}')").bind(current.typeVersion).run();
+await db.prepare("INSERT INTO runs(id,actor,status,created_at,mode,expected_count,threshold,threshold_justification,type_version,pack_json,budget_json,quote_id) VALUES('r','editor','closed','now','interactive',0,.9,'initial',?,?, '{}','q')").bind(current.typeVersion,JSON.stringify({...pack,definitionRevisionId:a.body.id})).run();
+await db.prepare("INSERT INTO artifacts(key,run_id,kind,state,created_at) VALUES('artifact','r','correction','complete','now')").run();
+await db.prepare("INSERT INTO corrections(id,run_id,actor,created_at,raw_key,result_key,proposals_json) VALUES('correction','r','editor','now','artifact','artifact',?)").bind(JSON.stringify({raise:{threshold:.96}})).run();
+check((await call('runs/r/corrections/correction/apply',{direction:'raise',threshold:.96})).status,400);
+check((await call('runs/r/corrections/correction/apply',{direction:'raise',threshold:.96},'reader')).status,403);
+check((await db.prepare('SELECT threshold FROM definition_active').first()).threshold,current.threshold);
+await db.prepare('UPDATE runs SET pack_json=? WHERE id=?').bind(JSON.stringify(pack),'r').run();
+check((await call('runs/r/corrections/correction/apply',{direction:'raise',threshold:.96})).status,200);
+check((await call('definitions')).body.active.threshold,.96);check((await call('definitions')).body.active.thresholdStatus,'calibrated');
+check((await call('definitions')).body.history.length,5);
+console.log(`Definition D1 API acceptance: ${checks} checks passed; zero vendor calls.`);
+}finally{await mf.dispose();}

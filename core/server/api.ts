@@ -1,3 +1,5 @@
+import {readStoredCorrection,saveReference,readReference,comparisonForRun,validateReferenceLineage} from './feedback.ts';
+import {effectiveProject,definitionState,createDefinitionDraft,activateDefinition,requireEditor,runtimeDefinitions,activeDefinition} from './definitions.ts';
 import {dispatchRunDocuments} from './start-dispatch.ts';
 import {readRunStopReason} from './run-stop.ts';
 import {uiCopy} from '../ui/copy.ts';
@@ -33,13 +35,14 @@ export async function manifestFor(store:Store,run:RunRow):Promise<BuilderManifes
   const reader=document.reader_key?(await store.json<{value:ReaderOutput}>(document.reader_key)).value:null;
   entries.push({vendorOutputs:{confidence,reader},extraction:document.extraction_json?JSON.parse(document.extraction_json):null,notes:JSON.parse(document.notes_json),outlineRecovered:(JSON.parse(document.notes_json) as string[]).includes('N_OUTLINE_RECOVERED'),fingerprint:document.fingerprint,originalFilename:document.original_filename,tag:document.tag,destinationFolder:decision.destinationFolder,rule:decision.ruleId,reasoningNote:serverCopy.reasons[decision.reasonCode],confidenceCheck:confidence?{choice:confidence.choice,certainty:confidence.confidence,noul:{...confidence.nouls}}:null,reader:reader?reader.verdicts.map(v=>({typeId:v.type_id,isType:v.is_type,rationale:v.rationale,evidence:[...v.evidence],closestAlternative:v.closest_alternative})):null});
  }
- const value={runId:run.id,entries,decisionNotePolicy:runDecisionNotePolicy((JSON.parse(run.pack_json) as ProjectPack).settings),confidenceStatePolicy:(JSON.parse(run.pack_json) as ProjectPack).settings.confidenceStatePolicy,pins:(JSON.parse(run.pack_json) as ProjectPack).pins,typeVersion:run.type_version,threshold:run.threshold,mode:run.mode,notes:documents.map(document=>({fingerprint:document.fingerprint,notes:JSON.parse(document.notes_json),failure:document.failure_json?JSON.parse(document.failure_json):null}))};
+ const frozenPack=JSON.parse(run.pack_json) as ProjectPack;
+ const value={runId:run.id,entries,readerEvidencePolicy:frozenPack.settings.readerEvidencePolicy??'exact-substring-v1',definitionRevisionId:frozenPack.definitionRevisionId,displayNames:frozenPack.displayNames,definitionThresholdStatus:frozenPack.definitionThresholdStatus,thresholdJustification:run.threshold_justification,decisionNotePolicy:runDecisionNotePolicy((JSON.parse(run.pack_json) as ProjectPack).settings),confidenceStatePolicy:(JSON.parse(run.pack_json) as ProjectPack).settings.confidenceStatePolicy,pins:(JSON.parse(run.pack_json) as ProjectPack).pins,typeVersion:run.type_version,threshold:run.threshold,mode:run.mode,notes:documents.map(document=>({fingerprint:document.fingerprint,notes:JSON.parse(document.notes_json),failure:document.failure_json?JSON.parse(document.failure_json):null}))};
  const key=await store.put(run.id,null,'manifest',value);
  await store.env.DB.prepare('UPDATE runs SET manifest_key=? WHERE id=? AND manifest_key IS NULL').bind(key,run.id).run();return value;
 }
 async function quote(request:Request,env:Env,store:Store,actor:string,authentication:'legacy'|'cloudflare'):Promise<Response>{
- await requireReady(env,authentication);const pack=requireProject(projectSource),raw=await jsonBody(request);
- requireValue(object(raw),'A quote request is required.');exact(raw,['documents','mode']);requireValue(raw.mode==='interactive'||raw.mode==='batch','Select a run mode.');requireValue(Array.isArray(raw.documents)&&raw.documents.length>0,'Choose at least one document.');
+ await requireReady(env,authentication);const pack=await effectiveProject(env,projectSource),raw=await jsonBody(request);
+ requireValue(object(raw),'A quote request is required.');exact(raw,['documents','mode','referenceId']);requireValue(raw.mode==='interactive'||raw.mode==='batch','Select a run mode.');requireValue(Array.isArray(raw.documents)&&raw.documents.length>0,'Choose at least one document.');
  const ids=new Set<string>();const docs:QuoteDocument[]=[];
  for(const value of raw.documents){
   requireValue(object(value),'Invalid preflight document.');exact(value,['fingerprint','originalFilename','tokenCounts','needsOutlineRecovery','failed']);identity(value);
@@ -47,13 +50,14 @@ async function quote(request:Request,env:Env,store:Store,actor:string,authentica
   requireValue(typeof value.needsOutlineRecovery==='boolean'&&typeof value.failed==='boolean'&&object(value.tokenCounts),'Explicit recovery state and token-count availability are required.');exact(value.tokenCounts,['readerInputTokens','confidenceInputTokens','recoveryInputTokens']);requireValue(Object.values(value.tokenCounts).every(v=>v===null||Number.isSafeInteger(v)&&Number(v)>=0),'Invalid token counts.');
   docs.push(value as unknown as QuoteDocument);
  }
+ if(raw.referenceId!==undefined){requireValue(typeof raw.referenceId==='string','Select valid saved feedback.');const reference=await readReference(store,raw.referenceId,actor);validateReferenceLineage(reference.definitionRevisionId,pack.definitionRevisionId);}
  const id=crypto.randomUUID(),version=await typeVersion(JSON.stringify(pack.typeFile));
- await env.DB.prepare('INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES(?,?,?,?,?,?,?,?)').bind(id,actor,now(),raw.mode,version,await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS})),JSON.stringify(docs),JSON.stringify({policy:'reported_usage',version:1,readerPromptVersion:READER_PROMPT_VERSION})).run();
+ await env.DB.prepare('INSERT INTO quotes(id,actor,created_at,mode,type_version,pack_hash,request_json,estimate_json) VALUES(?,?,?,?,?,?,?,?)').bind(id,actor,now(),raw.mode,version,await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS})),JSON.stringify(docs),JSON.stringify({policy:'reported_usage',version:1,readerPromptVersion:READER_PROMPT_VERSION,referenceId:raw.referenceId??null})).run();
  return response({quoteId:id,typeVersion:version,mode:raw.mode});
 }
 async function createRun(request:Request,env:Env,store:Store,actor:string,authentication:'legacy'|'cloudflare'):Promise<Response>{
  await requireReady(env,authentication);const raw=await jsonBody(request);requireValue(object(raw),'A run request is required.');exact(raw,['quoteId','budget']);requireValue(typeof raw.quoteId==='string','A preflight confirmation and explicit budget decision are required.');
- const pack=requireProject(projectSource),quote=await env.DB.prepare('SELECT * FROM quotes WHERE id=? AND actor=?').bind(raw.quoteId,actor).first<{id:string;mode:'interactive'|'batch';type_version:string;pack_hash:string;request_json:string;estimate_json:string}>();requireValue(quote,'The preflight confirmation is not available to this person.');
+ const pack=await effectiveProject(env,projectSource),quote=await env.DB.prepare('SELECT * FROM quotes WHERE id=? AND actor=?').bind(raw.quoteId,actor).first<{id:string;mode:'interactive'|'batch';type_version:string;pack_hash:string;request_json:string;estimate_json:string}>();requireValue(quote,'The preflight confirmation is not available to this person.');
  requireValue(quote.pack_hash===await shaText(JSON.stringify({pack,prompts:VENDOR_PROMPTS,build:env.BUILD_COMMIT,attempts:EXECUTION_ATTEMPTS}))&&quote.type_version===await typeVersion(JSON.stringify(pack.typeFile)),'The project changed after this confirmation. Confirm the run again.');
  const docs=JSON.parse(quote.request_json) as QuoteDocument[];
  let budget:ReturnType<typeof authorizeRunBudget>;
@@ -61,7 +65,11 @@ async function createRun(request:Request,env:Env,store:Store,actor:string,authen
  const prior=await env.DB.prepare('SELECT id,budget_json FROM runs WHERE quote_id=?').bind(quote.id).first<{id:string;budget_json:string}>();
  if(prior){const existing=readRunBudget(JSON.parse(prior.budget_json));requireValue(existing.mode===budget.mode&&existing.unlimitedAcknowledged===budget.unlimitedAcknowledged&&JSON.stringify(existing.limits)===JSON.stringify(budget.limits),'This confirmation already created a run with a different spending decision. Confirm a new run to change limits.');return response({runId:prior.id});}
  const control=await env.DB.prepare('SELECT threshold,threshold_justification FROM controls WHERE id=1').first<{threshold:number;threshold_justification:string}>();if(!control)throw new ServerFailure('E_STORAGE_D1','blocker','Run controls are missing.');
- const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO runs(id,actor,status,created_at,mode,expected_count,threshold,threshold_justification,type_version,pack_json,budget_json,quote_id) VALUES(?,?,'uploading',?,?,?,?,?,?,?,?,?)").bind(id,actor,now(),quote.mode,docs.length,control.threshold,control.threshold_justification,quote.type_version,JSON.stringify(pack),JSON.stringify(budget),quote.id).run();
+ if(pack.definitionRevisionId){control.threshold=pack.definitionThreshold!;control.threshold_justification=pack.definitionThresholdJustification!;}
+ const id=crypto.randomUUID();const referenceId=JSON.parse(quote.estimate_json).referenceId as string|null|undefined;if(referenceId){const reference=await readReference(store,referenceId,actor);validateReferenceLineage(reference.definitionRevisionId,pack.definitionRevisionId);}
+ const insertSql="INSERT INTO runs(id,actor,status,created_at,mode,expected_count,threshold,threshold_justification,type_version,pack_json,budget_json,quote_id) SELECT ?,?,'uploading',?,?,?,?,?,?,?,?,?"+(pack.definitionRevisionId?' WHERE EXISTS(SELECT 1 FROM definition_active WHERE id=1 AND revision_id=? AND threshold=? AND threshold_status=? AND justification=?)':'');
+ const params=[id,actor,now(),quote.mode,docs.length,control.threshold,control.threshold_justification,quote.type_version,JSON.stringify(pack),JSON.stringify(budget),quote.id];if(pack.definitionRevisionId)params.push(pack.definitionRevisionId,control.threshold,pack.definitionThresholdStatus!,pack.definitionThresholdJustification!);
+ const writes=[env.DB.prepare(insertSql).bind(...params)];if(referenceId)writes.push(env.DB.prepare('INSERT INTO feedback_run_links(run_id,reference_id) SELECT ?,? WHERE EXISTS(SELECT 1 FROM runs WHERE id=?)').bind(id,referenceId,id));const inserted=await env.DB.batch(writes);requireValue(inserted[0].meta.changes===1,'Categories changed. Confirm the run again.');
  await store.event(id,null,'run','created',{budget,mode:quote.mode});return response({runId:id},201);
 }
 export function verifyUploadTokens(upload:Upload,pack:ProjectPack):void{
@@ -125,9 +133,14 @@ async function handleRequest(request:Request,env:Env & {ASSETS?:Fetcher},cloudfl
   const url=new URL(request.url),path=url.pathname;
   const authentication=cloudflareActor?'cloudflare':'legacy';
   if(path==='/api/health'&&request.method==='GET')return response({...await health(env,authentication),...(cloudflareActor?{signIn:{mode:'cloudflare',authenticated:true}}:{})});
-  if(path==='/api/project'&&request.method==='GET')return response(projectSource);
+  if(path==='/api/project'&&request.method==='GET')return response(await effectiveProject(env,projectSource));
   if(!path.startsWith('/api/'))return env.ASSETS?await env.ASSETS.fetch(request):new Response(null,{status:404});
   const actor=cloudflareActor??await actorFor(request,env),store=new Store(env);
+  if(path==='/api/definitions'&&request.method==='GET')return response(await definitionState(env,projectSource as ProjectPack,actor));
+  if(path==='/api/definitions/drafts'&&request.method==='POST')return response(await createDefinitionDraft(env,projectSource as ProjectPack,actor,await jsonBody(request)),201);
+  const activation=/^\/api\/definitions\/([^/]+)\/activate$/.exec(path);
+  if(activation&&request.method==='POST')return response(await activateDefinition(env,projectSource as ProjectPack,actor,activation[1],await jsonBody(request)));
+  const feedbackRead=/^\/api\/feedback\/([^/]+)$/.exec(path);if(feedbackRead&&request.method==='GET')return response(await readReference(store,feedbackRead[1],actor));
   if(path==='/api/quote'&&request.method==='POST')return await quote(request,env,store,actor,authentication);
   if(path==='/api/runs'&&request.method==='POST')return await createRun(request,env,store,actor,authentication);
   if(path==='/api/runs'&&request.method==='GET'){
@@ -146,12 +159,19 @@ async function handleRequest(request:Request,env:Env & {ASSETS?:Fetcher},cloudfl
   if(action==='documents'&&request.method==='POST')return await uploadDocument(request,env,store,run);
   if(action==='start'&&request.method==='POST')return await start(env,store,run,authentication);
   if(action==='close'&&request.method==='POST'){await store.close(run.id,actor);return response({closed:true});}
+  if(action==='results'&&request.method==='GET')return response(await manifestFor(store,run));
   if(action==='manifest'&&request.method==='GET'){const manifest=await manifestFor(store,run);await store.close(run.id,actor);return new Response(JSON.stringify(manifest,null,2),{headers:{'content-type':'application/json','content-disposition':`attachment; filename="${run.id}-manifest.json"`,'cache-control':'no-store'}});}
+  if(action==='corrections'&&request.method==='GET'){const rows=(await env.DB.prepare('SELECT id,created_at FROM corrections WHERE run_id=? ORDER BY created_at DESC').bind(run.id).all<{id:string;created_at:string}>()).results;return response({corrections:rows.map(row=>({id:row.id,createdAt:row.created_at}))});}
   if(action==='corrections'&&request.method==='POST')return await corrections(request,env,store,run,actor);
+  const savedCorrection=/^corrections\/([^/]+)$/.exec(action??'');if(savedCorrection&&request.method==='GET')return response(await readStoredCorrection(store,run,savedCorrection[1]));
+  const referenceSave=/^corrections\/([^/]+)\/reference$/.exec(action??'');if(referenceSave&&request.method==='POST')return response(await saveReference(store,run,referenceSave[1],actor,await jsonBody(request) as Parameters<typeof saveReference>[4]),201);
+  if(action==='comparison'&&request.method==='GET')return response(await comparisonForRun(store,run,actor));
   const apply=/^corrections\/([^/]+)\/apply$/.exec(action??'');
   if(apply&&request.method==='POST'){
+   requireEditor(env,actor);const active=runtimeDefinitions(env)?await activeDefinition(env):null;const frozen=JSON.parse(run.pack_json) as ProjectPack;requireValue(!runtimeDefinitions(env)||active!==null,'Activate categories before applying a threshold.');requireValue(active?active.id===frozen.definitionRevisionId:run.type_version===await typeVersion(JSON.stringify(requireProject(projectSource).typeFile)),'These corrections belong to a different category version.');
    const raw=await jsonBody(request);requireValue(object(raw),'A threshold decision is required.');exact(raw,['direction','threshold']);requireValue(raw.direction==='raise'||raw.direction==='lower','Select a stored proposal.');
    const correction=await env.DB.prepare('SELECT proposals_json FROM corrections WHERE id=? AND run_id=?').bind(apply[1],run.id).first<{proposals_json:string}>();requireValue(correction,'The correction does not exist.');const proposal=(JSON.parse(correction.proposals_json) as CorrectionProposals)[raw.direction];requireValue(proposal&&proposal.threshold===raw.threshold,'Only the exact stored threshold proposal may be applied.');
+   if(active){const changed=await env.DB.batch([env.DB.prepare("UPDATE definition_active SET threshold=?,threshold_status='calibrated',justification=? WHERE id=1 AND revision_id=?").bind(raw.threshold,apply[1],active.id),env.DB.prepare('INSERT INTO threshold_history(id,correction_id,actor,created_at,threshold,direction) SELECT ?,?,?,?,?,? WHERE changes()=1').bind(crypto.randomUUID(),apply[1],actor,now(),raw.threshold,raw.direction)]);requireValue(changed[0].meta.changes===1,'Categories changed before this threshold could be applied.');return response({applied:true,threshold:raw.threshold,correctionId:apply[1]});}
    await env.DB.batch([env.DB.prepare('INSERT INTO threshold_history(id,correction_id,actor,created_at,threshold,direction) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),apply[1],actor,now(),raw.threshold,raw.direction),env.DB.prepare('UPDATE controls SET threshold=?,threshold_justification=? WHERE id=1').bind(raw.threshold,apply[1])]);return response({applied:true,threshold:raw.threshold,correctionId:apply[1]});
   }
   throw new ServerFailure('E_ROUTE','request','This API route does not exist.',404);

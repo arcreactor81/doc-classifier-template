@@ -1,3 +1,4 @@
+import {readerEvidencePolicy} from '../vendors/evidence-policy.ts';
 import {providerScope,readProviderCooldown,observeProviderCooldown,awaitProviderAdmission} from './provider-cooldown.ts';
 import type { WorkflowStep } from 'cloudflare:workers';
 import type { ProjectPack } from '../config/project.ts';
@@ -127,6 +128,6 @@ export class Runner {
    },
   };
   const result=await executeVendor(request,{transportAttempts:3,schemaAttempts:role==='reader'?2:1,baseDelayMs:1000,maxBackoffMs:30000,consecutiveFailureLimit:3},deps,decode);
-  return this.stage(`${role}-validated`,async()=>result);
+  return this.stage(`${role}-validated`,async()=>role==='reader'?{...result,evidenceComparisonPolicy:readerEvidencePolicy(pack.settings.readerEvidencePolicy)}:result);
  }
 }

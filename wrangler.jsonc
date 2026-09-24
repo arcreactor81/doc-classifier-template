@@ -46,7 +46,9 @@
   "vars": {
     "PROJECT_ID": "generic",
     "MODEL_CALLS_ENABLED": "false",
-    "BUILD_COMMIT": "unversioned"
+    "BUILD_COMMIT": "unversioned",
+    "DEFINITION_MODE": "runtime",
+    "DEFINITION_EDITORS": "[]"
   },
   "tsconfig": "tsconfig.worker.json",
   "alias": {

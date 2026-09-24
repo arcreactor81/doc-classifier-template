@@ -25,7 +25,8 @@
       "gapRatio": 1.5
     },
     "confidenceStatePolicy": "full-text-outline-v3",
-    "decisionNotePolicy": "full-state-structural-info-v2"
+    "decisionNotePolicy": "full-state-structural-info-v2",
+    "readerEvidencePolicy": "whitespace-quotes-v1"
   },
   "pins": {
     "confidence": {

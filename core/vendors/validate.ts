@@ -1,3 +1,4 @@
+import {evidenceMatches,readerEvidencePolicy,type ReaderEvidencePolicy} from './evidence-policy.ts';
 /** Validation of normalized responses only. Persist raw responses before calling. */
 export class ValidationFailure extends Error {
   readonly code: string;
@@ -85,9 +86,11 @@ export function validateConfidence(raw: unknown, options: ValidationOptions): Co
   return raw as unknown as ConfidenceOutput;
 }
 
-export function validateReader(raw: unknown, options: ValidationOptions & { readonly text: string }): ReaderOutput {
+export function validateReader(raw: unknown, options: ValidationOptions & { readonly text: string; readonly evidencePolicy?:ReaderEvidencePolicy }): ReaderOutput {
   configuration(options);
   if (typeof options.text !== 'string') throw new ValidationFailure('E_VALIDATOR_CONFIGURATION', 'blocker', 'Extracted text is required to verify evidence.');
+  let policy:ReaderEvidencePolicy;
+  try{policy=readerEvidencePolicy(options.evidencePolicy);}catch{throw new ValidationFailure('E_VALIDATOR_CONFIGURATION','blocker','Unknown reader evidence comparison policy.');}
   const code = 'E_READER_SCHEMA';
   shape(record(raw), code, 'The reader response must be an object.');
   model(raw, options.pin, code, 'E_TERRA_PIN_DRIFT');
@@ -102,7 +105,7 @@ export function validateReader(raw: unknown, options: ValidationOptions & { read
     shape(typeof verdict.rationale === 'string' && verdict.rationale.trim().length > 0, code, 'Each reader verdict must include its rationale.');
     shape(verdict.closest_alternative === null || (typeof verdict.closest_alternative === 'string' && options.typeIds.includes(verdict.closest_alternative)), code, 'The closest alternative must be a defined type or null.');
     shape(Array.isArray(verdict.evidence) && verdict.evidence.length <= 3, code, 'Each reader verdict may contain at most three evidence quotes.');
-    shape(verdict.evidence.every(quote => typeof quote === 'string' && quote.length > 0 && options.text.includes(quote)), code, 'Each evidence quote must exist verbatim in the extracted text.');
+    shape(verdict.evidence.every(quote => typeof quote === 'string' && quote.length > 0 && evidenceMatches(options.text,quote,policy)), code, policy==='exact-substring-v1'?'Each evidence quote must exist verbatim in the extracted text.':'Each evidence quote must match a contiguous source passage under the recorded formatting comparison policy.');
   }
   return raw as unknown as ReaderOutput;
 }
