@@ -14,6 +14,9 @@ export function failure(error: unknown): ServerFailure {
   return new ServerFailure('E_INTERNAL', 'blocker', error instanceof Error ? error.message : String(error), 500);
 }
 export const serverCopy = {
+  runtimeResetHeadline: 'Cloudflare interrupted processing during a runtime reset.',
+  runtimeResetAction: 'Your saved work is preserved. Check the continuation controls below; do not start a replacement run.',
+  recoveryAction: 'Keep this run and its saved work. Check the continuation status before trying again; do not start a replacement run.',
   retainedResponseHeadline: 'A vendor error was recorded and its charge is unresolved.',
   retainedResponseDiagnostic: 'This vendor response was stored successfully. Earlier software could report a concurrent spending-guard stop as a storage failure. The original stop code is preserved.',
   runHalted: 'This run has stopped. Review its recorded cause before starting another run.',
@@ -34,5 +37,5 @@ export const serverCopy = {
 };
 export function failureResponse(issue:ServerFailure){
   const copy=Object.hasOwn(serverCopy.corrections,issue.code)?serverCopy.corrections[issue.code as CorrectionValidationCode]:undefined;
-  return {error:{code:issue.code,kind:issue.kind,headline:copy?.headline??(issue.code==='E_INTERNAL'?serverCopy.headline:issue.message),action:copy?.action??serverCopy.action,details:{message:issue.code==='E_INTERNAL'?'An internal operation failed. The run must be reviewed before continuing.':issue.message}}};
+  return {error:{code:issue.code,kind:issue.kind,headline:copy?.headline??(issue.code==='E_INTERNAL'?serverCopy.headline:issue.message),action:copy?.action??(['E_RECOVERY_UNSAFE','E_WORKFLOW_INTERRUPTED'].includes(issue.code)?serverCopy.recoveryAction:serverCopy.action),details:{message:issue.code==='E_INTERNAL'?'An internal operation failed. The run must be reviewed before continuing.':issue.message}}};
 }

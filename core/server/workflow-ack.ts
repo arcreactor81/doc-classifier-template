@@ -1,5 +1,5 @@
 import {ServerFailure} from './errors.ts';
-const inactiveMessage='Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.';
+const lifecycleMessages=new Set(['Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.','Durable Object reset because its code was updated.']);
 export interface WorkflowReferenceDependencies {
  execute(callback:()=>Promise<string>):Promise<string>;
  checkpoint():Promise<string>;
@@ -18,7 +18,10 @@ export async function workflowReference(name:string,deps:WorkflowReferenceDepend
   // A domain/storage error from the callback is not an acknowledgement failure,
   // even if the runtime replaces its outer exception with an inactive-instance error.
   if(callbackFailed)throw callbackError;
-  if(!(error instanceof Error)||error.message!==inactiveMessage)throw error;
+  // A callback that returned a durable key has completed irrespective of the SDK's
+  // acknowledgement wording. Unentered/unfinished callbacks require a recognized
+  // lifecycle interruption and an independently complete D1 record.
+  if(!completed&&(!(error instanceof Error)||!lifecycleMessages.has(error.message)))throw error;
   const durableKey=completed?key:await deps.readCompleted();
   if(typeof durableKey==='string'&&durableKey.trim().length>0){
    await deps.recovered(completed?'callback':'ledger');

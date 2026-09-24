@@ -11,6 +11,7 @@ import { verifyModelPolicy,type FrozenVendorRequest,type VendorRole } from '../v
 import { Store,now,type RunRow } from './store.ts';
 import { checkpoint } from './checkpoint.ts';
 import { workflowReference } from './workflow-ack.ts';
+import { workflowWait } from './workflow-wait.ts';
 import { assertWorkflowGeneration } from './workflow-generation.ts';
 import { pricingFor } from './capabilities.ts';
 import { ServerFailure } from './errors.ts';
@@ -50,21 +51,51 @@ export class Runner {
     const row=await this.env.DB.prepare('SELECT status,artifact_key FROM checkpoints WHERE run_id=? AND fingerprint=? AND name=?').bind(this.run.id,this.fingerprint,name).first<{status:string;artifact_key:string|null}>();
     return row?.status==='complete'?row.artifact_key:null;
    },
-   recovered:async source=>{await this.store.event(this.run.id,this.fingerprint,name,'workflow_ack_recovered',{source,policy:'completed-checkpoint-ack-v1'});},
+   recovered:async source=>{await this.store.event(this.run.id,this.fingerprint,name,'workflow_ack_recovered',{source,policy:'completed-checkpoint-ack-v2'});},
   });
  }
  async accountingStage<T>(name:string,batchId:string,action:()=>Promise<T>):Promise<string>{
-  return this.step.do(name,{retries:{limit:0,delay:'1 second',backoff:'constant'},timeout:'15 minutes'},async()=>checkpoint(this.store.checkpoints(this.run.id,this.fingerprint),()=>accountingGuard(this.env,this.store,this.run.id,batchId),name,async()=>{
-   const started=Date.now();await this.store.event(this.run.id,this.fingerprint,name,'accounting_started',{batchId});
-   const result=await action();const key=await this.store.put(this.run.id,this.fingerprint,name,result);
-   await this.store.event(this.run.id,this.fingerprint,name,'accounting_completed',{key,batchId},Date.now()-started);return key;
-  }));
+  return workflowReference(name,{
+   execute:callback=>this.step.do(name,{retries:{limit:0,delay:'1 second',backoff:'constant'},timeout:'15 minutes'},callback),
+   checkpoint:()=>checkpoint(this.store.checkpoints(this.run.id,this.fingerprint),()=>accountingGuard(this.env,this.store,this.run.id,batchId),name,async()=>{
+    const started=Date.now();await this.store.event(this.run.id,this.fingerprint,name,'accounting_started',{batchId});
+    const result=await action();const key=await this.store.put(this.run.id,this.fingerprint,name,result);
+    await this.store.event(this.run.id,this.fingerprint,name,'accounting_completed',{key,batchId},Date.now()-started);return key;
+   }),
+   readCompleted:async()=>{const row=await this.env.DB.prepare('SELECT status,artifact_key FROM checkpoints WHERE run_id=? AND fingerprint=? AND name=?').bind(this.run.id,this.fingerprint,name).first<{status:string;artifact_key:string|null}>();return row?.status==='complete'?row.artifact_key:null;},
+   recovered:async source=>{await this.store.event(this.run.id,this.fingerprint,name,'workflow_ack_recovered',{source,policy:'completed-checkpoint-ack-v2',batchId});},
+  });
  }
  async stage<T>(name:string,action:()=>Promise<T>,containsText=false):Promise<string>{
   return this.reference(name,async()=>{
    const started=Date.now();await this.store.event(this.run.id,this.fingerprint,name,'started',{});
    const result=await action();const key=await this.store.put(this.run.id,this.fingerprint,name,result,containsText);
    await this.store.event(this.run.id,this.fingerprint,name,'completed',{key},Date.now()-started);return key;
+  });
+ }
+ /** Persist a relative wait once; replays never extend its absolute deadline. */
+ async wait(name:string,milliseconds:number):Promise<void>{
+  if(!Number.isSafeInteger(milliseconds)||milliseconds<0)throw new ServerFailure('E_WORKFLOW_WAIT_STATE','blocker','The workflow wait duration is invalid.');
+  await this.waitDeadline(name,()=>Date.now()+milliseconds);
+ }
+ async waitUntil(name:string,until:number):Promise<void>{
+  if(!Number.isSafeInteger(until)||until<0)throw new ServerFailure('E_WORKFLOW_WAIT_STATE','blocker','The workflow wait deadline is invalid.');
+  await this.waitDeadline(name,()=>until);
+ }
+ async waitAccounting(name:string,milliseconds:number,batchId:string):Promise<void>{
+  if(!Number.isSafeInteger(milliseconds)||milliseconds<0)throw new ServerFailure('E_WORKFLOW_WAIT_STATE','blocker','The accounting wait duration is invalid.');
+  await this.waitDeadline(name,()=>Date.now()+milliseconds,batchId);
+ }
+ private async waitDeadline(name:string,createDeadline:()=>number,batchId?:string):Promise<void>{
+  // Deadline creation and artifact reads are outside timer-error reconciliation.
+  // Any callback/storage failure must propagate rather than look like an elapsed wait.
+  const make=async()=>({until:createDeadline(),policy:'absolute-wait-v1'});
+  const key=batchId?await this.accountingStage(name+'-deadline',batchId,make):await this.stage(name+'-deadline',make);
+  const saved=await this.store.json<{until:number;policy:string}>(key);
+  if(saved.policy!=='absolute-wait-v1')throw new ServerFailure('E_WORKFLOW_WAIT_STATE','blocker','The saved workflow wait policy is invalid.');
+  await workflowWait(name,saved.until,{
+   now:Date.now,guard:()=>batchId?accountingGuard(this.env,this.store,this.run.id,batchId):this.executionGuard(),sleepUntil:(stepName,until)=>this.step.sleepUntil(stepName,until),
+   recovered:async until=>{await this.store.event(this.run.id,this.fingerprint,name,'workflow_wait_ack_recovered',{until,policy:'absolute-wait-v1'});},
   });
  }
  async admission(role:VendorRole,nextAttempt:number):Promise<void>{
@@ -78,7 +109,7 @@ export class Runner {
    await this.stage(name,async()=>{await this.store.event(this.run.id,this.fingerprint,'provider_cooldown','waiting',{scope,until});return{scope,until};});
    // Absolute timestamp and stable name prevent replay from adding another relative delay.
    // This is a top-level Workflow operation, outside both the plan and HTTP step.do callbacks.
-   await this.step.sleepUntil(name+'-wait',until);
+   await this.waitUntil(name+'-wait',until);
   }});
  }
  async vendor<T>(request:FrozenVendorRequest,pack:ProjectPack,decode:(raw:unknown)=>T):Promise<string>{
@@ -94,7 +125,7 @@ export class Runner {
    attemptId:()=>activeId=`${this.run.id}-${this.fingerprint}-${role}-${++index}`,
    sleep:async milliseconds=>{
     // Sleep is a top-level durable Workflow operation, never nested inside step.do.
-    await this.step.sleep(`${role}-retry-wait-${++sleepIndex}`,milliseconds);
+    await this.wait(`${role}-retry-wait-${++sleepIndex}`,milliseconds);
    },
    fetch:async(url,init)=>{
     let knownNetworkFailure=false;

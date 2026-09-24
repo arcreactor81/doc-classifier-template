@@ -18,9 +18,9 @@ test('domain callback failure survives a replaced outer error',async()=>{
  const cause=Object.assign(new Error('kill'),{code:'E_KILL_SWITCH'});
  await assert.rejects(workflowReference('reader-http-1',{execute:async callback=>{try{await callback();}catch{}throw inactive();},checkpoint:async()=>{throw cause;},readCompleted:async()=> 'saved',recovered:async()=>{}}),error=>error===cause);
 });
-test('unrelated outer error is never recovered',async()=>{
+test('unrelated outer error before callback cannot invent completion',async()=>{
  const cause=new Error('storage unavailable');let reads=0;
- await assert.rejects(workflowReference('reader-http-1',{execute:async callback=>{await callback();throw cause;},checkpoint:async()=> 'saved',readCompleted:async()=>{reads++;return 'saved';},recovered:async()=>{}}),error=>error===cause);assert.equal(reads,0);
+ await assert.rejects(workflowReference('reader-http-1',{execute:async()=>{throw cause;},checkpoint:async()=> 'saved',readCompleted:async()=>{reads++;return 'saved';},recovered:async()=>{}}),error=>error===cause);assert.equal(reads,0);
 });
 for(const key of [null,'','   '])test('missing or empty ledger key is an explicit interruption: '+JSON.stringify(key),async()=>{
  await assert.rejects(workflowReference('reader-http-1',{execute:async()=>{throw inactive();},checkpoint:async()=> 'unused',readCompleted:async()=>key,recovered:async()=>{throw new Error('must not recover');}}),error=>error instanceof Error&&'code' in error&&error.code==='E_WORKFLOW_INTERRUPTED'&&error.message.includes('reader-http-1'));
@@ -34,4 +34,10 @@ test('recovery event storage failure propagates without action retry',async()=>{
 });
 test('normal step returns unchanged and does not touch reconciliation',async()=>{
  assert.equal(await workflowReference('stage',{execute:callback=>callback(),checkpoint:async()=> 'saved',readCompleted:async()=>{throw new Error('unexpected');},recovered:async()=>{throw new Error('unexpected');}}),'saved');
+});
+
+test('confirmed callback result is authoritative across outer acknowledgement error variants',async()=>{
+ for(const message of ['Durable Object reset because its code was updated.','RPC acknowledgement unavailable']){
+  let actions=0;const key=await workflowReference('saved-stage',{execute:async callback=>{await callback();throw new Error(message);},checkpoint:async()=>{actions++;return 'durable';},readCompleted:async()=>{throw Error('must not re-read or repeat');},recovered:async()=>{}});assert.equal(key,'durable');assert.equal(actions,1);
+ }
 });

@@ -159,6 +159,7 @@ async function handleRequest(request:Request,env:Env & {ASSETS?:Fetcher},cloudfl
   const evidence=/^documents\/([^/]+)\/evidence$/.exec(action??'');
   if(evidence&&request.method==='GET')return response(await documentEvidence(store,run.id,evidence[1],actor));
   if(action==='documents'&&request.method==='POST')return await uploadDocument(request,env,store,run);
+  if(action==='recovery-status'&&request.method==='GET')return response({status:run.status,progress:await recoveryProgress(store,run.id,actor),stopReason:run.status==='halted'?await readRunStopReason(store,run):null});
   if(action==='recovery'&&request.method==='GET'){const inspected=await inspectRunRecovery(store,run.id,actor);await recoveryReadiness(store,inspected.run);return response({eligible:true,remaining:inspected.documents.length,mode:run.mode,budget:readRunBudget(JSON.parse(run.budget_json))});}
   if(action==='recover'&&request.method==='POST'){const raw=await jsonBody(request);requireValue(object(raw),'Explicit continuation confirmation is required.');exact(raw,['acknowledged']);requireValue(raw.acknowledged===true,'Confirm continuation using the original spending settings.');return response(await recoverRun(store,run.id,actor,{acknowledged:true,assertReady:current=>recoveryReadiness(store,current)}));}
   if(action==='start'&&request.method==='POST')return await start(env,store,run,authentication);

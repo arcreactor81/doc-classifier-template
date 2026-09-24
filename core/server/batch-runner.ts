@@ -21,13 +21,13 @@ export function batchReadRetryDelay(retryAfter:string|null,nowMs=Date.now()):num
  catch{throw new ServerFailure('E_RETRY_AFTER','blocker','The Batch retry-after header is invalid or unsupported.');}
 }
 /** Each temporary 429 outcome is persisted by accountingStage before this outer durable sleep. */
-export async function pollWithReadRetries(runner:Pick<Runner,'accountingStage'|'step'|'store'>,stagePrefix:string,batchId:string,read:()=>Promise<BatchSnapshot>):Promise<BatchSnapshot>{
+export async function pollWithReadRetries(runner:Pick<Runner,'accountingStage'|'waitAccounting'|'store'>,stagePrefix:string,batchId:string,read:()=>Promise<BatchSnapshot>):Promise<BatchSnapshot>{
  for(let attempt=1;attempt<=BATCH_READ_RETRY_ATTEMPTS;attempt++){
   const key=await runner.accountingStage(stagePrefix+'-read-'+attempt,batchId,async():Promise<BatchPollOutcome>=>{try{return{kind:'response',snapshot:await read()};}catch(error){if(error instanceof BatchReadRateLimitFailure)return{kind:'rate_limited',retryAfter:error.retryAfter,rawReference:error.rawReference};throw error;}});
   const outcome=await runner.store.json<BatchPollOutcome>(key);
   if(outcome.kind==='response')return outcome.snapshot;
   if(attempt===BATCH_READ_RETRY_ATTEMPTS)throw new ServerFailure('E_BATCH_READ_RATE_LIMIT','blocker','Batch polling remained rate limited after all permitted read attempts.');
-  await runner.step.sleep(stagePrefix+'-rate-limit-delay-'+attempt,batchReadRetryDelay(outcome.retryAfter));
+  await runner.waitAccounting(stagePrefix+'-rate-limit-delay-'+attempt,batchReadRetryDelay(outcome.retryAfter),batchId);
  }
  throw new ServerFailure('E_BATCH_READ_RATE_LIMIT','blocker','Batch polling retry state ended without an outcome.');
 }
@@ -48,7 +48,7 @@ export async function batchReader(runner:Runner,pack:ProjectPack,request:FrozenV
   if(status.result)return status.result;
   if(status.failure)throw new ServerFailure(status.failure.code,'document',status.failure.message);
   if(status.leader){await coordinate(runner,pack);continue;}
-  await runner.step.sleep(`batch-wait-delay-${waitScope}${tick}`,'30 seconds');
+  await runner.wait(`batch-wait-delay-${waitScope}${tick}`,30000);
  }
 }
 /** Evaluate retained accounting only after the entire submitted result stream has been saved. */
@@ -102,7 +102,7 @@ async function coordinateGroup(runner:Runner,pack:ProjectPack,group:BatchArtifac
    return deps.fetch(url,init);
   }};
   for(let poll=0;!['completed','failed','expired','cancelled'].includes(snapshot.status);poll++){
-   await runner.step.sleep('batch-'+groupIndex+'-'+schemaAttempt+'-poll-delay-'+poll,batchReadRetryDelay(snapshot.retryAfter));
+   await runner.waitAccounting('batch-'+groupIndex+'-'+schemaAttempt+'-poll-delay-'+poll,batchReadRetryDelay(snapshot.retryAfter),snapshot.id);
    snapshot=await pollWithReadRetries(runner,'batch-'+groupIndex+'-'+schemaAttempt+'-poll-'+poll,snapshot.id,()=>pollBatch(snapshot.id,context,accountingDeps,io));
   }
   const correlatedKey=await runner.accountingStage(`batch-${groupIndex}-${schemaAttempt}-correlate`,snapshot.id,async()=>{

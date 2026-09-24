@@ -6,7 +6,7 @@ function harness(){
  const values=new Map<string,unknown>(),events:string[]=[];let sequence=0;
  const runner={
   accountingStage:async(name:string,_batchId:string,action:()=>Promise<unknown>)=>{events.push('stage:'+name);const key='key-'+ ++sequence;values.set(key,await action());return key;},
-  step:{sleep:async(name:string,delay:number)=>{events.push('sleep:'+name+':'+delay);}},
+  waitAccounting:async(name:string,delay:number,batchId:string)=>{assert.equal(batchId,'batch_1');events.push('sleep:'+name+':'+delay);},
   store:{json:async<T>(key:string)=>values.get(key) as T},
  };
  return{runner,events};

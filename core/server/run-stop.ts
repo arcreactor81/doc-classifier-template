@@ -12,7 +12,8 @@ export async function readRunStopReason(store:Store,run:RunRow){
  const message=record(raw)&&typeof raw.message==='string'?raw.message:code==='E_KILL_SWITCH'?serverCopy.runKilled:serverCopy.runHalted;
  const error=failureResponse(new ServerFailure(code,'blocker',message)).error;
  const details:Record<string,unknown>={...error.details,...(first?{firstObservedAt:first.created_at}: {})};
- let headline=error.headline;
+ let headline=error.headline,action=serverCopy.runHaltAction;
+ if(code==='E_INTERNAL'&&['Durable Object reset because its code was updated.','Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.'].includes(message)){headline=serverCopy.runtimeResetHeadline;action=serverCopy.runtimeResetAction;details.runtimeReset=message;}
  if(code==='E_SPEND_UNACCOUNTED'||code==='E_RAW_PERSIST'){
   const call=await store.env.DB.prepare("SELECT v.role,v.status,v.raw_key,v.fingerprint,v.attempt_id,d.original_filename FROM vendor_calls v LEFT JOIN documents d ON d.run_id=v.run_id AND d.fingerprint=v.fingerprint WHERE v.run_id=? AND v.role!='batch_metadata' AND v.cost_nano IS NULL ORDER BY v.created_at,v.attempt_id LIMIT 1").bind(run.id).first<UnknownCall>();
   if(call){Object.assign(details,{role:call.role,httpStatus:call.status,attemptId:call.attempt_id,document:call.original_filename,costKnown:false});
@@ -29,5 +30,5 @@ export async function readRunStopReason(store:Store,run:RunRow){
    }
   }
  }
- return{...error,headline,action:serverCopy.runHaltAction,details};
+ return{...error,headline,action,details};
 }

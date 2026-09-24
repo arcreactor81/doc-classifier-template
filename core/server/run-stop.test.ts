@@ -27,3 +27,8 @@ test('historical storage wrapper error shows retained unknown response without r
  const before=JSON.stringify(run);const f=fixture(null,{role:'confidence',status:520,raw_key:'run/doc/raw/a.json',fingerprint:'doc',attempt_id:'a',original_filename:'document.pdf'},{status:520,raw:'error code: 520\n',privateHeader:'not displayed'});
  const result=await readRunStopReason(f.store,run);assert.equal(result?.code,'E_RAW_PERSIST');assert.equal(result?.details.rawResponseRetained,true);assert.equal(result?.details.httpStatus,520);assert.equal(result?.details.costKnown,false);assert.equal(JSON.stringify(run),before);assert.ok(!JSON.stringify(result).includes('privateHeader'));
 });
+
+test('known runtime reset has a concrete continuation explanation while preserving original code',async()=>{
+ const message='Durable Object reset because its code was updated.';const run={id:'run',status:'halted',halt_json:JSON.stringify({code:'E_INTERNAL',message})} as RunRow;
+ const f=fixture(null);const result=await readRunStopReason(f.store,run);assert.equal(result?.code,'E_INTERNAL');assert.match(result?.headline??'',/Cloudflare.*interrupted/);assert.equal(result?.details.runtimeReset,message);assert.match(result?.action??'',/continuation/);
+});
